@@ -189,7 +189,19 @@ class OpengitRepo {
     await inputs.ready()
 
     // Autobase v7 takes (store, opts) — handler triplet is open/apply/close.
-    this._refsBase = new Autobase(this.store, null, {
+    //
+    // CRITICAL: each Autobase MUST get its OWN Corestore namespace. Autobase
+    // derives its local-writer core as `store.get({ name: 'local' })` and its
+    // system view as `store.get({ name: '_system' })` — FIXED names on the
+    // passed-in store. We run three Autobases (refs, issues, prs) off one
+    // repo Corestore; sharing the raw store made all three resolve to the
+    // SAME `local` core (opened `exclusive:true`). On a quiescent owner store
+    // the first init wins and it limps by; on a NON-WRITABLE, actively-
+    // replicating store the second Autobase's ready() deadlocks forever
+    // waiting for the exclusive `local` lock the first one holds. That hung
+    // every remote-side openPR/openIssue (order-independent: whichever opens
+    // second). Per-Autobase namespacing gives each its own local/_system.
+    this._refsBase = new Autobase(this.store.namespace('opengit:autobase:refs'), null, {
       apply: makeApply(bootstrap),
       open: makeOpen(),
       valueEncoding: 'json'
@@ -653,7 +665,9 @@ class OpengitRepo {
       ...(bootstrap.owners || [])
     ]
 
-    this._issuesBase = new Autobase(this.store, null, {
+    // Own namespace — see the _refsBase note: shared raw store ⇒ shared
+    // `local` core ⇒ second-Autobase deadlock on a replicating remote.
+    this._issuesBase = new Autobase(this.store.namespace('opengit:autobase:issues'), null, {
       apply: Issues.makeApply(bootstrap),
       open: Issues.makeOpen(),
       valueEncoding: 'json'
@@ -724,7 +738,8 @@ class OpengitRepo {
       ...(bootstrap.moderators || []),
       ...(bootstrap.owners || [])
     ]
-    this._prsBase = new Autobase(this.store, null, {
+    // Own namespace — see the _refsBase note.
+    this._prsBase = new Autobase(this.store.namespace('opengit:autobase:prs'), null, {
       apply: PRs.makeApply(bootstrap),
       open: PRs.makeOpen(),
       valueEncoding: 'json'

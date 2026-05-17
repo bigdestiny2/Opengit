@@ -94,7 +94,14 @@ A change Ian makes on his machine lands in your repo on yours — over the real 
 
 ## Status
 
-- [ ] 0.1 T1 integration test (`git clone opengit://` in-harness) — **in progress**
-- [ ] 0.2 `git init` the Opengit repo
-- [ ] 0.3 scripted solo dry-run with real Opengit payload
-- [ ] Stage 1 scheduled with Ian
+- [x] **0.1 — DONE.** Deterministic gate test green (`packages/git-remote-opengit/test/integration/clone.test.js`): real `git push opengit://` through the real helper stores refs+objects; real `git clone` of the rebuilt shadow yields a byte-correct tree. Subprocess-over-DHT clone is a documented skip (synthetic single-node DHT can't cross-process rendezvous — that's the live test's job). **Stage 0.1 caught and fixed SIX real bugs that would each have killed the live session:**
+  1. Helper never called `repo.refresh()` → every clone saw an empty repo (v0.0.11 manifest contract).
+  2. Helper's peer-gate ran unconditionally → owner `git push` to a fresh repo failed "no peers".
+  3. `shadow.pushToRepo` only harvested packs, never loose objects → push stored the ref but ZERO objects.
+  4. `git repack`/`index-pack` run with `cwd` inside a bare repo → "not a git repository" → no consolidation.
+  5. `require('opengit-core/lib/shadow')` subpath crashed the helper (exports map) → "aborted session".
+  6. `repo.writable` used for owner-detection → remotes falsely short-circuited and cloned empty (added `repo.isLocalWritable`).
+- [x] **0.2 — DONE.** `git init` + initial commit of Opengit (101 tracked files; node_modules excluded). The forge is now in version control.
+- [x] **0.3 — DONE.** `scripts/dry-run-collab.js` green **7/7** with the REAL Opengit repo as payload: Alice `git push opengit://` of all 101 tracked files through the real helper → persistent server → Bob replicates over the swarm → real `git clone` of the rebuilt shadow is byte-correct (SPEC.md + source verified) → Bob opens a **signed issue + PR on the replicated remote**, both readable back (Ed25519-authored, Autobase-applied). Full canonical suite stays green afterward (**119 pass / 0 fail / 4 documented skips**). **Stage 0.3 caught and fixed a SEVENTH bug that would have killed the live session on Ian's very first collaboration action:**
+  7. **All three repo Autobases (`_refsBase`, `_issuesBase`, `_prsBase`) shared one Corestore.** Autobase derives its local-writer as `store.get({ name: 'local' })` and system view as `store.get({ name: '_system' })` — fixed names on the passed-in store — and opens `local` with `exclusive: true`. Passing the raw `this.store` to all three made them collide on a single `local` core. On a quiescent owner store the first init wins and unit tests limp by (why owner-side issue/PR tests were green); on a **non-writable, actively-replicating** store the *second* Autobase's `ready()` deadlocks forever waiting for the exclusive `local` lock the first holds. Order-independent: whichever of issue/PR opened *second* hung. The live test is **Ian opening an issue AND a PR** → his second action would have hung with no error, indistinguishable from a network failure. Fix: each Autobase gets its own `this.store.namespace('opengit:autobase:<refs|issues|prs>')`. Verified by isolated 2-forge probes (both orders, owner + remote: 0.4 s, previously ∞) and the green end-to-end dry-run.
+- [ ] Stage 1 — **ready to schedule with Ian** (on the real public DHT — the authoritative cross-process validation). Stage 0 is airtight: the git-data path and the forge collaboration primitives are both proven in-harness against the real Opengit repo; the only remaining unproven variable is the subprocess-over-real-DHT discovery hop, which is precisely Stage 1's job.
