@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feasibility — Opengit</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="doc-nav">
+  <div class="wrap nav-row">
+    <a href="/" class="home-link">⌬ Opengit</a>
+    <a href="/docs/quickstart.html">Quickstart</a>
+    <a href="/docs/readme.html" class="">README</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/feasibility.html" class="active">Feasibility</a><a href="/docs/decentralization-audit.html" class="">Audit</a><a href="/docs/deep-audit.html" class="">Deep Audit</a><a href="/docs/improvement-research.html" class="">Research</a><a href="/docs/state.html" class="">State</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/licensing.html" class="">Licensing</a>
+  </div>
+</nav>
+<article class="doc-page wrap">
+<h1>Opengit — Feasibility Study</h1>
+<blockquote><p>Companion to <a href="/docs/spec.html">SPEC.md</a>. Component-by-component honest assessment of what we know works, what is engineering effort, and what is research risk.</p></blockquote>
+<p><strong>Status:</strong> Draft v0.1. Covers v1 scope; deeper-future items (ZK CI, etc.) noted but not deeply analyzed.</p>
+<hr>
+<h2>Rating scale</h2>
+<table><thead><tr><th>Rating</th><th>Meaning</th></tr></thead><tbody><tr><td>🟢 <strong>GREEN</strong></td><td>Standard application of existing primitives. Risk is implementation labor, not novelty.</td></tr><tr><td>🟡 <strong>YELLOW</strong></td><td>Engineering challenge with known-but-non-trivial techniques. Plausibly hard, not novel research.</td></tr><tr><td>🔴 <strong>RED</strong></td><td>Open research problem or business/social problem with no clean technical answer. Requires accepting a tradeoff or punting.</td></tr></tbody></table>
+<hr>
+<h2>Executive verdict</h2>
+<p><strong>The thesis holds.</strong> The Pear/Bare/Holepunch stack maps cleanly onto every core forge primitive. Roughly 70% of the surface is GREEN, 25% is YELLOW, 5% is RED. The RED items (search, identity recovery, runner trust at scale) are all <strong>already RED in centralized systems</strong>; we just have to be honest about not magically solving them.</p>
+<p>The single largest operational risk is <strong>availability</strong>, and HiveRelay directly addresses it. The single largest UX risk is <strong>discovery/search</strong>, and the indexer-relay model is a workable but imperfect answer.</p>
+<p>Critical-path components for an MVP demo are all GREEN. We can build the &quot;git push to a sleeping laptop's repo via a relay&quot; demo with confidence.</p>
+<hr>
+<h2>1. Repo storage &amp; replication</h2>
+<p><strong>Maps to:</strong> Corestore + Hypercore + Hyperbee + Hyperblobs (SPEC §3)</p>
+<h3>Verdict: 🟢 GREEN</h3>
+<h3>Why</h3>
+<ul><li>Git's data model is content-addressed; this aligns with append-only logs nearly perfectly.</li><li>Hyperbee is a proven KV layer; refs are KV.</li><li>Hyperblobs is designed for exactly this case (large binary blobs in a Hypercore).</li><li>Hypercore replication is mature, encrypted, and bandwidth-efficient (sparse downloads).</li></ul>
+<h3>Risks</h3>
+<ul><li><strong>Pack format size.</strong> Git packfiles can be GB-scale. Streaming in/out of a Hypercore block is fine — Hyperblobs handles chunking. But large initial pushes need backpressure. <strong>Mitigation:</strong> test with a 1GB+ repo as part of MVP acceptance.</li><li><strong>Fork object sharing.</strong> SPEC §3.6 says forks are separate Corestores. Object dedup happens at the git layer (CAS) but not at the storage layer — same blob bytes can exist in upstream and fork cores. <strong>Mitigation:</strong> acceptable for v1; revisit with a shared-objects model in v2 if storage cost matters.</li><li><strong>GC truncation.</strong> Hypercore truncate is sparse, not a real delete. Storage cost grows. <strong>Mitigation:</strong> documented behavior, periodic full-repack into a new core when the unused fraction crosses a threshold.</li></ul>
+<h3>What's known to work in similar systems</h3>
+<ul><li>Hypercore-based filesystems (Hyperdrive) ship in production via Keet, Pear apps, etc.</li><li>Holepunch's own Pear distribution is a Hyperdrive of binaries — same shape as our <code>ns:releases</code>.</li></ul>
+<hr>
+<h2>2. <code>git-remote-opengit</code> helper</h2>
+<p><strong>Maps to:</strong> SPEC §5.1</p>
+<h3>Verdict: 🟢 GREEN</h3>
+<h3>Why</h3>
+<ul><li><code>git-remote-helpers</code> is a documented, stable extension point. Multiple production helpers exist (<code>git-remote-https</code>, <code>git-remote-gcrypt</code>, <code>git-remote-ipfs</code>, <code>git-remote-radicle</code>).</li><li>The protocol is text-based and well-specified.</li><li>We've built protomux RPC pieces before (Holepunch ships them).</li></ul>
+<h3>Risks</h3>
+<ul><li><strong>Pack negotiation correctness.</strong> Smart-protocol &quot;haves/wants&quot; negotiation has edge cases (shallow clones, partial clones, multi_ack). <strong>Mitigation:</strong> start with the simple capability set; explicitly declare we don't support shallow/partial in v1 (state in the helper's <code>capabilities</code> output).</li><li><strong>Performance vs HTTPS.</strong> First-time clone over P2P will likely be slower than GitHub HTTPS due to peer discovery latency. <strong>Mitigation:</strong> acceptable; emphasize subsequent ops (push, fetch deltas) where P2P is competitive.</li><li><strong>Cross-platform builds.</strong> Helper is a Bare binary. Bare cross-compiles cleanly; we ship native binaries per arch.</li></ul>
+<h3>What's known to work</h3>
+<ul><li><code>git-remote-radicle</code> is a working precedent for &quot;git over a non-HTTP P2P transport.&quot;</li><li>Bare's CLI distribution path is proven via Pear itself.</li></ul>
+<hr>
+<h2>3. Multi-writer (collaborators with push)</h2>
+<p><strong>Maps to:</strong> Autobase over <code>ns:refs</code> (SPEC §3.5)</p>
+<h3>Verdict: 🟡 YELLOW</h3>
+<h3>Why YELLOW not GREEN</h3>
+<ul><li>Autobase is real and works, but it's the <strong>least battle-tested</strong> primitive in the Holepunch suite for this use case. Autobase's primary in-production user is Keet (chat).</li><li>A ref-update apply function needs to handle non-fast-forward conflicts deterministically. Two collaborators racing to push to <code>main</code> from different bases is a real scenario.</li></ul>
+<h3>Specific risks</h3>
+<ul><li><strong>Apply-function determinism.</strong> All replicas must compute the same view from the same inputs. Standard Autobase contract, but our apply logic (validate signature → check fast-forward → accept/reject) needs to be carefully pure.</li><li><strong>Adding/removing writers.</strong> Autobase membership changes are themselves Autobase entries. There's a &quot;writer eviction&quot; race (writer is removed but their in-flight entries are still in queue). Acceptable consequence — their last commits don't apply, they re-push from a current writer's account.</li><li><strong>View rebuild cost.</strong> If the ref Autobase has 100k entries (busy repo over years), full rebuild is slow. <strong>Mitigation:</strong> Autobase supports snapshots; ensure we use them.</li></ul>
+<h3>What's known to work</h3>
+<ul><li>Keet uses Autobase for multi-writer rooms. Order of magnitude of writers/messages is similar to a busy repo's collaborators/refs.</li></ul>
+<h3>Open question</h3>
+<ul><li>For very low-collaboration repos (1–3 writers), is Autobase overkill? Could we ship a &quot;single-writer mode&quot; that's just a Hypercore and upgrade to Autobase on first co-writer add? <strong>Recommendation:</strong> yes, do this. SPEC should add a meta flag.</li></ul>
+<hr>
+<h2>4. Forks &amp; branching</h2>
+<p><strong>Maps to:</strong> SPEC §3.6</p>
+<h3>Verdict: 🟢 GREEN</h3>
+<h3>Why</h3>
+<ul><li>A fork is just &quot;another Corestore that knows about the upstream key.&quot; No protocol-level forking primitive needed.</li><li>Pulling from upstream into your fork is a normal <code>git fetch</code>, same wire path as anything else.</li></ul>
+<h3>Risks</h3>
+<ul><li><strong>Discovery of forks of a repo.</strong> &quot;What forks exist?&quot; is a search problem (delegated to indexers). For known forks, the upstream's <code>ns:refs</code> can carry <code>refs/opengit/forks/&lt;fork-key&gt;</code> advisory entries.</li><li><strong>Cross-fork object visibility.</strong> Already covered (§1).</li></ul>
+<hr>
+<h2>5. Identity &amp; profile feeds</h2>
+<p><strong>Maps to:</strong> SPEC §4</p>
+<h3>Verdict: 🟢 GREEN</h3>
+<h3>Why</h3>
+<ul><li>An identity feed is a single Hypercore with signed entries. This is the simplest possible Hypercore use case.</li><li>Public-key identity is established in the wider ecosystem (Nostr, Bluesky, ssh, PGP, age) — not novel.</li></ul>
+<h3>Risks</h3>
+<ul><li><strong>Key compromise has no recovery.</strong> Same risk as PGP, Nostr, SSH. Not novel; not pleasant. <strong>Mitigation in v1:</strong> document. Plan a key-rotation event type for v2.</li><li><strong>Identity-feed size growth.</strong> Active users append a lot. Standard Hypercore concern; truncation + snapshot helps.</li><li><strong>Spam follows.</strong> Anyone can claim to follow you. Adopt the Nostr/Bluesky pattern of follows being unilateral assertions; viewers de-spam at render time.</li></ul>
+<h3>Open question</h3>
+<ul><li>Do we want the identity feed to be <strong>the same key</strong> as the user's commit-signing key? Pros: single thing to manage. Cons: rotation cost is huge. <strong>Recommendation:</strong> identity key signs sub-keys (commit-signing, device-keys); rotation of sub-keys doesn't change identity.</li></ul>
+<hr>
+<h2>6. Naming (Slashtags + petnames)</h2>
+<p><strong>Maps to:</strong> SPEC §4.2</p>
+<h3>Verdict: 🟡 YELLOW</h3>
+<h3>Why YELLOW</h3>
+<ul><li>Slashtags works for the &quot;discover by key, then resolve to metadata&quot; case.</li><li>Slashtags does <strong>not</strong> solve the &quot;type a username, get a key&quot; case. That's the hard one.</li><li>We're delegating to opt-in registries, which is honest but less polished than DNS.</li></ul>
+<h3>Risks</h3>
+<ul><li><strong>Squatting.</strong> First-come-first-served naming gets gamed. Mitigation depends on registry policy — not our problem to solve in v1, but we have to admit it's fragmented.</li><li><strong>User confusion.</strong> &quot;Why is <code>alice</code> different on different Opengit instances?&quot; Mitigation: clear UI marking — &quot;via indexer X&quot; / &quot;in your petnames&quot; / &quot;verified by Y&quot;.</li><li><strong>Phishing via lookalike names.</strong> No central authority means more lookalike-name risk. <strong>Mitigation:</strong> show pubkey prefix in UI; petnames are local-only by default.</li></ul>
+<h3>What's known to work</h3>
+<ul><li>Petnames as a UX pattern: solid in the secure-systems-design literature for decades; Mastodon and Bluesky show it can be made acceptable at scale.</li></ul>
+<h3>Honest summary</h3>
+<p>We will not have GitHub's &quot;type <code>torvalds/linux</code> and you find it&quot; UX in v1. We'll have &quot;your friend Alice sends you <code>slash://&lt;key&gt;</code> and you save it as <code>alice/linux</code>.&quot; For discovery beyond your social graph, you query an indexer. This is a real downgrade.</p>
+<hr>
+<h2>7. Issues &amp; PRs (Autobase threads)</h2>
+<p><strong>Maps to:</strong> SPEC §6</p>
+<h3>Verdict: 🟡 YELLOW</h3>
+<h3>Why YELLOW</h3>
+<ul><li>Autobase is the right primitive but, as noted (§3), is the least-proven part of the stack at scale.</li><li>Issue/PR threads with &quot;anyone can append&quot; semantics need real moderation, which is a content-policy problem more than a technical one.</li></ul>
+<h3>Risks</h3>
+<ul><li><strong>Moderation latency.</strong> Spam appears in the raw input log immediately; the moderated view filters it. New replicators see spam until they sync the moderation actions. <strong>Mitigation:</strong> acceptable; moderate and replicas catch up.</li><li><strong>Storage growth from spam.</strong> Every spam comment is in the input log forever. <strong>Mitigation:</strong> moderators can append <code>tombstone</code> entries that the apply function uses to omit content from the view; the bytes still exist in the Hypercore, but the UI doesn't render them. Periodic compaction into snapshots truncates old inputs.</li><li><strong>PR merge flow correctness.</strong> SPEC §6.2 — fetching from a fork into upstream's Corestore on merge. The two Corestores must replicate cleanly into each other's object spaces. This is a known-working pattern but worth a hard test.</li><li><strong>Coordinated comment ordering.</strong> Strict per-thread ordering is what users expect from forums. Autobase's apply function must order comments deterministically (e.g. by <code>(threadId, lamport-clock, by)</code>). Implementable; mention as test target.</li></ul>
+<h3>Mitigations strong enough to call YELLOW not RED</h3>
+<ul><li>Autobase is in production (Keet rooms have similar properties).</li><li>Moderation tooling for Autobase isn't novel — same shape as ActivityPub instance moderation.</li></ul>
+<hr>
+<h2>8. Discovery &amp; search (indexer relays)</h2>
+<p><strong>Maps to:</strong> SPEC §7</p>
+<h3>Verdict: 🔴 RED (with a workable mitigation)</h3>
+<h3>Why RED</h3>
+<ul><li>Global P2P search is an unsolved problem. We are not solving it.</li><li>The mitigation — opt-in indexer relays — works but <strong>fragments</strong> the namespace and creates a soft dependency on infrastructure that doesn't exist yet.</li><li>Without an indexer running, &quot;find a repo about Rust async&quot; is impossible. With one, it's only as complete as that one indexer's view.</li></ul>
+<h3>Specific risks</h3>
+<ul><li><strong>Cold start.</strong> Day 1, no indexers exist. Bootstrapping requires running a reference indexer ourselves. That looks centralized; needs careful framing as &quot;reference, not authoritative.&quot;</li><li><strong>Indexer cost.</strong> Crawling the public swarm and indexing is non-trivial — disk + bandwidth. A naive indexer scales poorly. Multiple specialized indexers (one per language? one per topic?) is a more realistic structure.</li><li><strong>Adversarial indexers.</strong> A malicious indexer can hide repos, reorder results, inject sponsored ones. <strong>Mitigation:</strong> users configure a list and union/cross-check. Real but partial.</li><li><strong>No global &quot;trending&quot;</strong>, except per-indexer. Acceptable; reframe as &quot;trending on indexer X.&quot;</li></ul>
+<h3>What helps this be operable</h3>
+<ul><li>The follow-graph gives &quot;I follow Alice → I see her repos&quot; without an indexer at all. Most active discovery in real GitHub usage is social. We replicate that part for free.</li><li>For the long tail &quot;search for repos about X&quot; workflow, indexers are necessary but the user already understands &quot;different search engines, different results&quot; from the regular web.</li></ul>
+<h3>Honest summary</h3>
+<p><strong>This is the part most likely to disappoint users used to GitHub.</strong> It is the part that motivates building an MVP relay ourselves and operating it as the &quot;default&quot; indexer (clearly disclosed as one option among many). Without a credible default, the social proof for early users is missing.</p>
+<hr>
+<h2>9. CI / runners</h2>
+<p><strong>Maps to:</strong> SPEC §8</p>
+<h3>Verdict: 🟡 YELLOW</h3>
+<h3>Why YELLOW</h3>
+<ul><li>The job lifecycle (queue → claim → execute → result) is well-understood; nothing exotic.</li><li>The trust model (signed-by-trusted-runner-key) sidesteps the verifiable-compute research problem.</li><li>The hard part is making it <strong>convenient</strong>: someone has to run runners. For v1 this is &quot;run your own&quot;; that's a real friction.</li></ul>
+<h3>Risks</h3>
+<ul><li><strong>Solo dev with no runner.</strong> New repo, no laptop trusted to be on, no community runner — no CI. <strong>Mitigation:</strong> ship a &quot;local runner&quot; mode that runs as a tray app on the dev's machine, executes jobs whenever it's running. Better than nothing; same UX as <code>act</code> for GitHub Actions.</li><li><strong>Runner sandboxing.</strong> Running arbitrary user code is a security problem. Solved by Docker/Firecracker/etc., not novel, but a labor cost. <strong>Mitigation:</strong> v1 runner uses Docker (industry-standard); document that runners shoulder this cost.</li><li><strong>Action ecosystem.</strong> GitHub Actions's value is the marketplace of reusable actions. We can't replicate that day 1. <strong>Mitigation:</strong> support a subset of Actions syntax + <code>uses: &lt;opengit-repo-key&gt;/&lt;action-path&gt;@&lt;ref&gt;</code> to point at any Opengit repo as an action source. Migration of common actions is community work.</li><li><strong>Cost / sustainability.</strong> Compute is expensive. Volunteer runners won't scale. <strong>Mitigation:</strong> design accommodates paid runners (Lightning, etc.), defer implementation.</li></ul>
+<h3>What's known to work</h3>
+<ul><li>Self-hosted runners on GitHub Actions and GitLab CI are common; the deployment shape is familiar.</li><li>Docker-based isolation is standard.</li></ul>
+<h3>Honest summary</h3>
+<p>v1 ships as &quot;run your own runner.&quot; That's enough to demonstrate it works and serve project teams; it is not enough to make individual hobbyists' single-developer projects' CI just-work the way GitHub does.</p>
+<hr>
+<h2>10. HiveRelay (blind relay infrastructure)</h2>
+<p><strong>Maps to:</strong> SPEC §10. Verified upstream snapshot in <a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</p>
+<h3>Verdict: 🟢 GREEN — verified ready 2026-05-03</h3>
+<h3>Why</h3>
+<ul><li><a href="https://github.com/bigdestiny2/P2P-Hiverelay">P2P-Hiverelay</a> is in active production (foundation network of 5+ relays across NA/APAC), Apache-2.0, with <code>p2p-hiverelay-client</code> v0.5.1 published.</li><li>Blind-encrypted seeding is a stable v0.5+ surface: <code>client.publish(dir, { encryptionKey })</code>. Relay holds opaque blocks, peers with the key replicate normally.</li><li>Capability-doc signing (v0.6.0) + diverse-quorum reads + signed fork proofs match audit principles #6 (&quot;no fail-closed on default unreachable&quot;) and #9 (&quot;censorship-resistant by construction&quot;). We get them by integration, not by reimplementation.</li><li>Pear/Bare native runtime support; same DHT we already use; no parallel network.</li><li>Self-hostable: HiveRelay nodes run on Umbrel, RPi, VPS, Mac Mini. Foundation network is the <em>convenient</em> default operator pool, not the protocol.</li><li>Author seeding manifests (Ed25519-signed list of &quot;fetch my drives from these relays&quot;) give us a cleaner <code>ns:meta.mirrors</code> replacement for free.</li></ul>
+<h3>Risks (revised)</h3>
+<ul><li><strong>DMCA / takedowns.</strong> Relay operators are the takedown target, like Mastodon admins. <strong>Mitigation:</strong> documented model, blind relays for sensitive content, multiple mirrors. HiveRelay's signed <code>unseed</code> kill-switch lets owners broadcast a takedown without giving operators unilateral removal authority over content they don't own.</li><li><strong>Operator economics.</strong> HiveRelay v0.6+ ships Lightning-sats payment for paid tiers (10 sats/GB-month, 20 sats/GB egress). The protocol does <strong>not</strong> require payment; self-hosted nodes serve free. We document this clearly to avoid creating a financial dependency that breaks audit principle #1 (&quot;no required central party&quot;).</li><li><strong>Foundation network capture.</strong> Same shape as the &quot;default relay trap&quot; (audit §3). Mitigation: ship multi-operator default lists, encourage self-hosting via the same <code>opengit-relay</code> binary, never make foundation-network usage a soft requirement.</li><li><strong>Upstream API drift.</strong> HiveRelay is actively developed (v0.5 → v0.6 → v0.7 in ~one month). Pin major version; track changelog (well-maintained).</li></ul>
+<h3>Honest summary</h3>
+<p>The single largest risk in the v0.0.1 plan (&quot;HiveRelay may not be ready&quot;) is closed. The v0.0.4 path is now: thin <code>packages/opengit-relay/</code> wrapper around <code>p2p-hiverelay-client</code> plus pubkey-pinning, author-signed manifests, and unseed plumbing through CLI/forge. New risks introduced by depending on HiveRelay are governance/operational, not technical, and are addressable by sticking to the self-hosting parity story we already committed to.</p>
+<hr>
+<h2>11. Pages, releases, packages</h2>
+<p><strong>Maps to:</strong> SPEC §9</p>
+<h3>Verdict: 🟢 GREEN</h3>
+<h3>Why</h3>
+<ul><li>Hyperdrive is exactly a filesystem-over-Hypercore. Pear apps are distributed this way already (Pear itself uses this).</li><li>Releases as Hyperdrive paths is natural. CAS dedup of binaries across versions is automatic.</li><li>Pages served via Pear's HTTP gateway is just configuration.</li></ul>
+<h3>Risks</h3>
+<ul><li><strong>HTTP gateway as centralization.</strong> If a single gateway becomes the way most people view Pages, that's a centralization point. <strong>Mitigation:</strong> the gateway is just a Pear app; users can run their own; the canonical address is the <code>pear://</code> URL. Document.</li><li><strong>Large artifacts.</strong> Multi-GB releases (game binaries, ML models). Hypercore handles this; just slow on first download. Same as today's experience.</li></ul>
+<hr>
+<h2>12. Private repos &amp; access control</h2>
+<p><strong>Maps to:</strong> SPEC §11.3</p>
+<h3>Verdict: 🟡 YELLOW</h3>
+<h3>Why YELLOW</h3>
+<ul><li>Hypercore supports per-block encryption (proven primitive).</li><li>The hard part is <strong>key management</strong> — sharing a key with a team, rotating when someone leaves, recovering when keys are lost.</li><li>This is a known-hard problem (E2EE messaging, age, GPG team setups).</li></ul>
+<h3>Risks</h3>
+<ul><li><strong>Key rotation on team change.</strong> Removing a member requires re-encryption under a new key + re-replication. For large repos, this is slow and storage-doubling. <strong>Mitigation:</strong> acceptable for occasional events; UX clearly indicates the cost.</li><li><strong>Onboarding.</strong> Adding a new member requires an existing member to wrap the repo key for them. Standard E2EE onboarding flow; pattern from Signal/Keet works.</li><li><strong>Recovery.</strong> Lose all team keys, lose the repo. <strong>Mitigation:</strong> suggest a sealed escrow holder (a trusted relay or a backup keypair), or live with it.</li></ul>
+<h3>Honest summary</h3>
+<p>Workable. Doesn't match GitHub's &quot;click a button to add a collaborator.&quot; Will feel clunky to teams that haven't worked with E2EE tools before.</p>
+<hr>
+<h2>13. Notifications &amp; webhooks</h2>
+<p><strong>Maps to:</strong> SPEC §15 open question 6</p>
+<h3>Verdict: 🟡 YELLOW</h3>
+<h3>Why YELLOW</h3>
+<ul><li>Hypercore is pull-shaped (you connect and replicate). Notifications are push-shaped (something happens, your phone buzzes).</li><li>Bridging this requires a long-lived peer (your laptop, a personal relay, or a notification-bridge service).</li></ul>
+<h3>Path forward</h3>
+<ul><li><strong>Self-bridge:</strong> your laptop's Pear app is online → it pushes desktop notifications.</li><li><strong>Personal-relay bridge:</strong> if you run a personal relay, it can subscribe and emit webhook HTTP calls to a service of your choice.</li><li><strong>Push-notification relay:</strong> a service (someone runs) that holds your notification preferences + APNS/FCM tokens, and emits push via Apple/Google. Centralized failure mode but optional.</li></ul>
+<h3>Honest summary</h3>
+<p>&quot;Webhook to my Slack when a PR opens&quot; requires either an always-on personal peer or a third-party bridge. Acceptable; not seamless.</p>
+<hr>
+<h2>14. Discovery beyond search: trending, recommendations</h2>
+<h3>Verdict: 🔴 RED</h3>
+<h3>Why</h3>
+<ul><li>&quot;Trending&quot; requires a global view of activity, which we don't have.</li><li>Recommendations require either a global model or significant per-user computation on raw activity feeds.</li><li>Both are typically delivered by indexers in v1, with all the indexer caveats.</li></ul>
+<h3>Honest summary</h3>
+<p>Punted. v1 has &quot;what your follow graph is doing&quot; (a feed). v2 might have &quot;trending on indexer X.&quot; Beyond that is open.</p>
+<hr>
+<h2>15. Migration from GitHub</h2>
+<h3>Verdict: 🟡 YELLOW</h3>
+<h3>Why YELLOW (not GREEN)</h3>
+<ul><li>Importing a repo is git clone + git push: easy.</li><li>Importing <strong>issues, PRs, comments, CI history, releases</strong> requires careful translation. GitHub's API exposes the data; mapping to our schema is mechanical but not trivial.</li><li>Identity mapping: GitHub usernames → Opengit identity keys is a UX puzzle.</li></ul>
+<h3>Path forward</h3>
+<ul><li><code>opengit import gh &lt;owner&gt;/&lt;repo&gt;</code> — pulls via GitHub API, populates <code>ns:issues</code>, <code>ns:prs</code>, <code>ns:releases</code>. Comments are attributed to a &quot;synthetic identity&quot; with <code>originalSource: github.com/&lt;user&gt;</code> until the user claims it.</li><li>Identity claiming: a GitHub user posts a signed Opengit identity in a gist, the importer reconciles.</li></ul>
+<h3>Honest summary</h3>
+<p>Doable, well-scoped engineering effort. v1 ships without it; v1.x adds.</p>
+<hr>
+<h2>16. Performance &amp; scalability</h2>
+<h3>Concerns</h3>
+<table><thead><tr><th>Concern</th><th>Verdict</th><th>Notes</th></tr></thead><tbody><tr><td>10MB repo, 1 user</td><td>🟢</td><td>Trivial.</td></tr><tr><td>1GB repo, 5 collaborators</td><td>🟢</td><td>Hypercore handles this. Test as MVP acceptance.</td></tr><tr><td>100GB monorepo, 100 collaborators</td><td>🟡</td><td>Should work; need to validate Autobase view rebuild times.</td></tr><tr><td>100k issues / repo</td><td>🟡</td><td>Autobase view + Hyperbee index handles it; rebuild cost is the concern.</td></tr><tr><td>Indexer crawling 100k repos</td><td>🟡</td><td>Plausible but real cost; needs careful storage planning.</td></tr><tr><td>Indexer crawling 10M repos (GitHub-scale)</td><td>🔴</td><td>Not in v1. Indexers will be specialized/topical.</td></tr></tbody></table>
+<h3>Notes</h3>
+<ul><li>DHT lookup latency dominates first-fetch experience. Hyperswarm's DHT is well-tuned but not as fast as direct HTTPS. Expect ~1–5s additional cold-start latency vs git-over-HTTPS.</li><li>Subsequent operations against a known peer are fast (TCP/UDX-direct).</li></ul>
+<hr>
+<h2>17. Legal &amp; policy</h2>
+<h3>Verdict: 🟡 YELLOW</h3>
+<h3>Concerns</h3>
+<ul><li><strong>DMCA-style takedowns.</strong> Relays bear the burden. Like Tor exit nodes, like Mastodon instance admins. We document this honestly and recommend small operators stay small.</li><li><strong>CSAM and other illegal content.</strong> Same as above. Relays must have abuse policies; we provide tooling (<code>opengit-relay block &lt;repo-key&gt;</code>) and do not provide tooling that obstructs lawful takedown.</li><li><strong>Export controls.</strong> Public-key crypto is in Hypercore. Already exported by every major OS; not novel risk.</li><li><strong>Terms-of-service for the project itself.</strong> As an open protocol with no central operator, &quot;ToS&quot; applies only to the relays each user chooses to use.</li></ul>
+<h3>Honest summary</h3>
+<p>The legal surface is a relay-operator surface, like every other federated/P2P network. Document it; don't pretend the surface doesn't exist.</p>
+<hr>
+<h2>18. Aggregate risk register</h2>
+<table><thead><tr><th>#</th><th>Risk</th><th>Severity</th><th>Likelihood</th><th>Mitigation strategy</th></tr></thead><tbody><tr><td>1</td><td>Search UX disappoints early users</td><td>High</td><td>High</td><td>Run a reference indexer; lean on follow-graph for primary discovery</td></tr><tr><td>2</td><td>~~HiveRelay isn't ready / mature enough at v1 ship~~</td><td>~~High~~</td><td>~~Medium~~</td><td><strong>CLOSED 2026-05-03</strong>: HiveRelay v0.5+ verified ready (Apache-2.0, blind-mirror SDK, signed capability docs, diverse-quorum, fork detection). Plan in <a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</td></tr><tr><td>3</td><td>Autobase view performance at scale</td><td>Medium</td><td>Medium</td><td>Use snapshots; benchmark early; &quot;single-writer mode&quot; fast path</td></tr><tr><td>4</td><td>No sustainable runner economics</td><td>Medium</td><td>High</td><td>Self-hosted v1; design for paid v2; partner with one or two community ops</td></tr><tr><td>5</td><td>Identity-key compromise</td><td>High (per user)</td><td>Low</td><td>Document; plan v2 rotation; sub-keys for commit signing</td></tr><tr><td>6</td><td>Onboarding friction (peer discovery, setup)</td><td>Medium</td><td>High</td><td>Ship one-click installer; reference relay configured by default</td></tr><tr><td>7</td><td>Migration from GitHub stalls adoption</td><td>Medium</td><td>Medium</td><td>Build importer; prioritize issues + PRs + releases</td></tr><tr><td>8</td><td>Legal pressure on default relays</td><td>Medium</td><td>Medium</td><td>Multiple defaults; clear operator policy; jurisdictional diversity</td></tr><tr><td>9</td><td>Spam in issues makes UX bad</td><td>Medium</td><td>Medium</td><td>Moderation tooling early; reputation in v2</td></tr><tr><td>10</td><td>Pear ecosystem dependency (Holepunch viability)</td><td>High</td><td>Low</td><td>Stack is OSS; we could fork primitives if needed; not unique to us</td></tr></tbody></table>
+<hr>
+<h2>19. Build effort estimate (rough)</h2>
+<table><thead><tr><th>Component</th><th>Est. eng-weeks (1 strong dev)</th></tr></thead><tbody><tr><td><code>opengit-core</code> lib (Corestore wrapper, refs Hyperbee, objects Hyperblobs)</td><td>4–6</td></tr><tr><td><code>git-remote-opengit</code> helper</td><td>2–3</td></tr><tr><td><code>opengit-relay</code> (HiveRelay-based blind path)</td><td>1–2 (HiveRelay verified ready 2026-05-03)</td></tr><tr><td>Single-writer end-to-end demo (push/clone via relay)</td><td>2</td></tr><tr><td>Multi-writer Autobase ref management</td><td>4–6</td></tr><tr><td>Identity feeds</td><td>2</td></tr><tr><td>Issue/PR Autobase + apply functions</td><td>4–6</td></tr><tr><td>Pear app shell (UI)</td><td>6–10</td></tr><tr><td>Indexer reference implementation</td><td>4–6</td></tr><tr><td>CI runner reference implementation</td><td>4–6</td></tr><tr><td><code>opengit</code> CLI</td><td>2–3</td></tr><tr><td>GitHub importer</td><td>3–4</td></tr><tr><td>Documentation, packaging, install paths</td><td>3–4</td></tr><tr><td><strong>MVP total (items 1–4)</strong></td><td><strong>~10–13 eng-weeks</strong></td></tr><tr><td><strong>v0.5 (single-writer + identity + issues)</strong></td><td><strong>~25–30 eng-weeks</strong></td></tr><tr><td><strong>v1 (everything but ZK CI / paid runners)</strong></td><td><strong>~50–70 eng-weeks</strong></td></tr></tbody></table>
+<p>These are integration-heavy estimates; treat as order-of-magnitude.</p>
+<hr>
+<h2>20. Recommended path forward</h2>
+<h3>Phase 0 (de-risk the assumptions)</h3>
+<ol><li>~~<strong>Verify HiveRelay status</strong> — is it shipped/usable, or do we build equivalent?~~ <strong>CLOSED 2026-05-03</strong> (<a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>).</li><li><strong>Verify Autobase scale</strong> — write a synthetic benchmark with 10k inputs, measure view rebuild time. Is it acceptable?</li><li>~~<strong>Build a 2-week prototype</strong> of <code>opengit-core</code> + <code>git-remote-opengit</code> against a single Hypercore (no Autobase yet). Confirm <code>git clone opengit://</code> actually works.~~ <strong>DONE in v0.0.3</strong> — shadow-bridge implementation in <a href="packages/git-remote-opengit/">packages/git-remote-opengit/</a> with the supporting <a href="packages/opengit-core/lib/shadow.js">ShadowRepo</a> primitive.</li></ol>
+<h3>Phase 1: MVP (after de-risk)</h3>
+<ul><li>Single-writer repos</li><li>Pinning relay</li><li><code>git clone</code> / <code>git push</code> from stock git via the helper</li><li>Demo: A pushes, A's laptop sleeps, B clones from relay</li></ul>
+<h3>Phase 2: collaboration</h3>
+<ul><li>Multi-writer Autobase refs</li><li>Issues</li><li>Identity feeds &amp; Slashtags integration</li><li>Pear app shell — read-only repo browsing + issues UI</li></ul>
+<h3>Phase 3: forge UX</h3>
+<ul><li>PRs (fork model + Autobase threads)</li><li>Releases &amp; Pages</li><li>CI runner v1 (self-hosted, signed-results)</li><li>Indexer reference</li><li>GitHub importer</li></ul>
+<h3>Phase 4: scale-out</h3>
+<ul><li>Paid pinning / paid CI runners (Lightning)</li><li>Federation patterns (cross-indexer aggregation)</li><li>v2 identity recovery</li></ul>
+<hr>
+<h2>21. Conclusion</h2>
+<p>The technical thesis — that Pear/Bare/Holepunch primitives compose into a credible GitHub alternative — holds. The hard problems (search, runner trust, identity recovery) exist in every centralized forge too; we just have to be honest about how we're solving (or not solving) them rather than papering over with a service.</p>
+<p>The single highest-leverage demo to build first is <strong>&quot;clone from a sleeping laptop's repo via a relay.&quot;</strong> It validates Corestore-as-repo, <code>git-remote-opengit</code>, and HiveRelay all in one user-visible moment. Two weeks of work, and the rest of the spec is downstream of it.</p>
+<p>The single biggest UX risk is search/discovery. Plan to run a reference indexer alongside the protocol launch, frame it as one option among many, and accept that v1 will not have GitHub's discovery polish.</p>
+<p>Recommend proceeding to Phase 0 de-risk.</p>
+</article>
+<footer>
+  <div class="wrap">
+    <p>
+      Apache-2.0 by default · No telemetry · No phone-home ·
+      <a href="https://github.com/bigdestiny2/opengit">source</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "opengit-cli",
+  "version": "0.0.1",
+  "description": "Opengit user-facing CLI",
+  "license": "Apache-2.0",
+  "bin": {
+    "opengit": "bin/opengit.js"
+  },
+  "dependencies": {
+    "opengit-core": "*"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "opengit-pages",
+  "version": "0.0.6",
+  "description": "Render an Opengit repo's HEAD into a static HTML site browsable via PearBrowser, GitHub Pages-style git web viewers, or any HTTP browser. Zero JS, zero external deps, fully offline.",
+  "license": "Apache-2.0",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./render": "./lib/render.js",
+    "./templates": "./lib/templates.js"
+  },
+  "dependencies": {
+    "opengit-core": "*",
+    "hyperdrive": "^11.13.0",
+    "b4a": "^1.6.6"
+  }
+}

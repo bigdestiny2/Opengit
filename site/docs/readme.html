@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>README — Opengit</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="doc-nav">
+  <div class="wrap nav-row">
+    <a href="/" class="home-link">⌬ Opengit</a>
+    <a href="/docs/quickstart.html">Quickstart</a>
+    <a href="/docs/readme.html" class="active">README</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/feasibility.html" class="">Feasibility</a><a href="/docs/decentralization-audit.html" class="">Audit</a><a href="/docs/deep-audit.html" class="">Deep Audit</a><a href="/docs/improvement-research.html" class="">Research</a><a href="/docs/state.html" class="">State</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/licensing.html" class="">Licensing</a>
+  </div>
+</nav>
+<article class="doc-page wrap">
+<h1>Opengit</h1>
+<p>P2P-native code forge on the Pear/Bare/Holepunch stack. Drop-in <code>git</code> compatibility, no central server, available even when the owner is offline (via mirrors / blind relays).</p>
+<blockquote><p><strong>Status:</strong> v0.0.9 — Holepunch-native consolidation. <strong><code>blind-peering</code></strong> is now wired into <code>Forge</code> for Holepunch's official always-on pinning client. <strong><code>keet-identity-key</code></strong> wraps <code>OpengitIdentity</code> — <code>opengit identity init</code> shows a 24-word mnemonic, <code>opengit identity recover -- &lt;words&gt;</code> rebuilds from it. New <strong><code>pear/</code></strong> subdir establishes the <code>pear://opengit/&lt;key&gt;</code> distribution channel. <strong>112 tests passing</strong>, 0 failing, 3 deliberately skipped. 299 deps, all approved licenses. Read the docs in this order:</p>
+<ol><li><a href="/docs/spec.html">SPEC.md</a> — architecture, data model, wire protocol</li><li><a href="/docs/feasibility.html">FEASIBILITY.md</a> — RED/YELLOW/GREEN per component</li><li><a href="/docs/decentralization-audit.html">DECENTRALIZATION-AUDIT.md</a> — strict-decentralization audit + open action items</li><li><a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a> — verified upstream HiveRelay snapshot + v0.0.4 blind-relay integration plan</li><li><a href="/docs/pearbrowser-integration.html">PEARBROWSER-INTEGRATION.md</a> — three integration shapes analyzed; v0.0.6 ships the pages-drive shape</li><li><a href="/docs/licensing.html">LICENSING.md</a> — per-package license matrix</li><li><strong><a href="/docs/deep-audit.html">DEEP-AUDIT-v0.0.7.md</a></strong> — comprehensive review of everything that exists; decentralization grade, threat-model gaps, test coverage, prioritized next moves</li></ol></blockquote>
+<h2>What works today</h2>
+<p>The full v0.0.3 pack-bridge is in. <code>git clone opengit://&lt;key&gt;</code> works against an online peer or mirror via the shadow-bridge (Corestore is the source of truth; a per-repo bare-git shadow on disk lets <code>git upload-pack</code>/<code>receive-pack</code> do the smart-protocol work).</p>
+<ul><li><code>OpengitRepo</code> — Corestore-backed repo: refs Hyperbee, object-index Hyperbee, objects Hyperblobs, meta Hyperbee, <strong>meta-keys Hyperbee</strong> (wrapped content-key bootstrap, v0.0.4). Public <strong>and private</strong> repos (per-block AEAD encryption when private).</li><li><code>OpengitForge</code> — opens repos, joins the swarm, accepts custom DHT bootstrap, profile-aware, keyring-aware. <strong><code>publishToBlindRelay()</code></strong> lazy-binds to <code>p2p-hiverelay-client</code> (v0.0.4).</li><li><code>Keyring</code> — per-profile content-key storage for private repos.</li><li><code>IdentityStore</code> — persistent ed25519 identity per profile (v0.0.4).</li><li><code>wrappedKey</code> — sealed-box wrapping of content keys for collaborator identity pubkeys (v0.0.4).</li><li><code>MultiWriterRefs</code> (Autobase) — opt-in multi-writer refs with signed inputs + apply-time validation (v0.0.4).</li><li><code>PinnedRelays</code> — out-of-band trust pins for relay identities, matches HiveRelay's <code>pinRelay()</code> shape (v0.0.4).</li><li><code>Petnames</code> — local-first <code>name → key</code> map (the v0 naming layer, no global registry).</li><li><code>profile</code> — <code>$OPENGIT_HOME/profiles/&lt;name&gt;/</code> compartmentalization.</li><li><code>topic</code> — public + private swarm-topic derivation (private topics keyed off the content key, so DHT observers cannot enumerate private repos).</li><li><code>git-remote-opengit</code> — full pack-bridge via <code>connect</code> capability + spawned <code>git upload-pack</code>/<code>receive-pack</code> against a per-repo shadow bare repo. Distinguishes &quot;no peers reachable&quot; from &quot;empty repo.&quot; Profile + bootstrap aware.</li><li><code>ShadowRepo</code> — bare-git on-disk cache that round-trips refs and packfiles between Corestore and a real <code>.git</code> directory.</li><li><code>opengit-mirror</code> — plaintext mirror for <strong>public</strong> repos (joins swarm, replicates Corestore). Profile-aware.</li><li><code>opengit-relay</code> — blind relay daemon for <strong>private</strong> repos. Hard-deps on <code>p2p-hiverelay-client</code> (v0.0.4 scaffold; source-of-bytes adapter lands v0.0.5).</li><li><code>opengit</code> CLI — full surface: <code>init [--private] [--multi-writer]</code>, <code>info</code>, <code>list-refs</code>, <code>set-ref</code>, <code>serve</code>, <code>profiles</code>, <code>petname</code>, <code>keyring</code>, <code>identity</code>, <code>invite/accept-invite/list-invites</code>, <code>add-writer/remove-writer/list-writers</code>, <code>pin-relay/unpin-relay/list-pins</code>, <code>blind-publish</code>, <code>unseed</code>, <code>issue list/open/comment/close/reopen/show</code>, <strong><code>pages publish/url</code></strong> (v0.0.6).</li><li><code>Issues</code> (Autobase) — anyone-signed open/comment, author-or-moderator close/reopen, moderator-only label/assign (v0.0.5).</li><li><code>RepoIndex</code> — persistent <code>repoKeyHex → namespace</code> map so reopen-by-key on a freshly-opened forge finds the writable cores instead of opening empty replicas (v0.0.5).</li><li><strong><code>opengit-pages</code></strong> — renders a repo's HEAD into a static-HTML Hyperdrive (<code>/index.html</code>, <code>/tree/...</code>, <code>/blob/...</code>, <code>/commit/...</code>, <code>/issues/...</code>, <code>/manifest.json</code>). Browseable from PearBrowser via <code>hyper://&lt;pagesDriveKey&gt;/</code>. Source-of-truth banner on every page links back to <code>opengit://&lt;repoKey&gt;</code>. (v0.0.6)</li><li><strong>PearBrowser bridge</strong>: HiveRelay seeds the pages drive (existing flow); PearBrowser's hybrid HTTP-first / P2P-fallback fetcher serves it. <strong>Zero code change on either neighbor.</strong> (v0.0.6)</li><li><strong><code>opengit pages watch</code></strong> — debounced auto-republish on ref-core append events; lag from push to PearBrowser-visible update is sub-second. (v0.0.7)</li><li><strong>Encrypted pages drives</strong> — private repos can publish via <code>--encrypted</code>; pages drive uses the same content key as the repo so collaborators see plaintext while blind relays hold ciphertext only. (v0.0.7)</li><li><strong><code>opengit-relay</code> is now Apache-2.0 by default</strong> — native Hyperswarm replication path; HiveRelay-network seeding becomes opt-in via <code>--use-hiverelay</code> (which pulls AGPL-3.0 deps and accepts the AGPL boundary). (v0.0.7)</li><li><strong><code>opengit-indexer</code></strong> — opt-in indexer relay with allowlist-only ingestion; Hyperbee-backed inverted index over name + description + topics; Protomux RPC over Hyperswarm; client-side <code>fanOutQuery</code> queries N indexers in parallel, unions results, attaches per-result provenance. (v0.0.7)</li><li><strong><code>Forge.requestBlindPin()</code></strong> + <strong><code>Forge.setBlindPeerMirrors()</code></strong> — Holepunch's official <code>blind-peering</code> client wired in. Apache-2.0 throughout. Operators run <code>blind-peer-cli</code> separately. (v0.0.9)</li><li><strong>Mnemonic-rooted identity</strong> via <code>keet-identity-key</code>. <code>opengit identity init</code> shows a 24-word phrase. <code>opengit identity recover -- &lt;24 words&gt;</code> rebuilds the identity on a new device. (v0.0.9)</li><li><strong><code>pear://</code> distribution channel</strong> established. <code>pear/</code> subdir ships a shell with <code>pear: { type: 'terminal' }</code> config. <code>pear stage opengit &amp;&amp; pear release opengit</code> mints a versioned link. v0.1+ replaces the shell with a native Bare port. (v0.0.9)</li></ul>
+<h2>Layout</h2>
+<pre><code>packages/
+  opengit-core/        Bare/Node lib: repo, forge, identity, keyring,
+                       petnames, profile, topic
+  git-remote-opengit/  git remote helper binary
+  opengit-mirror/      plaintext mirror daemon for PUBLIC repos
+  opengit-cli/         user-facing CLI
+examples/
+  end-to-end.js        scripted in-process A→mirror→B demo (skeleton)
+  git-clone-demo.sh    real `git clone opengit://...` end-to-end demo
+scripts/
+  bootstrap.sh         install workspaces
+  check-licenses.js    verify all deps use approved licenses</code></pre>
+<h2>Two replication paths (don't mix them up)</h2>
+<table><thead><tr><th>Component</th><th>Sees plaintext?</th><th>Use for</th><th>Status</th></tr></thead><tbody><tr><td><strong><code>opengit-mirror</code></strong></td><td>Yes</td><td>Public repos. Mirror operator can read all refs/commits/files.</td><td>Implemented</td></tr><tr><td><strong><code>opengit-relay</code></strong> (blind)</td><td>No</td><td>Private repos. Operator holds ciphertext only.</td><td><strong>v0.0.4 target.</strong> Will be a thin wrapper around <code>p2p-hiverelay-client</code> (<a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>). HiveRelay verified production-ready 2026-05-03.</td></tr></tbody></table>
+<p>The library already supports private repos with per-block encryption (visibility flag in <code>createRepo</code>); blind-relay infrastructure is what's pending. Until v0.0.4 ships, <strong>a private repo is reachable only by collaborators who already hold the content key</strong> — there's no &quot;always-on&quot; availability for private repos yet.</p>
+<h2>Decentralization promises</h2>
+<ul><li><strong>No required central party.</strong> Every component is forkable; no Opengit-the-project service is on the critical path.</li><li><strong>No telemetry, no phone-home.</strong> Opengit binaries make only the network calls required by your stated operations. Verify by reading the source.</li><li><strong>DHT bootstrap is overridable.</strong> Set <code>OPENGIT_BOOTSTRAP=host:port,host:port</code> to avoid Hyperswarm's defaults. Or <code>--bootstrap</code> on the mirror.</li><li><strong>Profile compartmentalization.</strong> Use <code>OPENGIT_PROFILE=work</code> (or <code>--profile work</code>) to give each context a separate corestore root, keyring, petname file, and identity. Profiles never share state.</li><li><strong>Local-first naming.</strong> Petnames live in <code>$OPENGIT_HOME/profiles/&lt;name&gt;/petnames.json</code>. No global registry, no DNS, no signup.</li><li><strong>Encoding canonical: z32 user-visible, hex internal.</strong> <code>opengit://&lt;z32&gt;</code> is the URL form; hex appears only inside JSON metadata.</li><li><strong>Private repos are private by construction.</strong> Discovery key, content key, and topic-derivation secret are independent. Mirror operators see plaintext; blind-relay operators (v0.0.3+) hold ciphertext only.</li></ul>
+<p>Full audit, open action items, and threat model: <a href="/docs/decentralization-audit.html">DECENTRALIZATION-AUDIT.md</a>.</p>
+<h2>Quick CLI tour</h2>
+<pre data-lang="bash"><code># Public repo
+opengit init my-public-repo
+opengit info &lt;key&gt;
+opengit set-ref my-public-repo refs/heads/main aaaaaaaa...
+
+# Private repo (auto-generates content key, stores in keyring)
+opengit init my-private-repo --private
+
+# Compartmentalize
+opengit --profile work init work-stuff
+OPENGIT_PROFILE=work opengit profiles list
+
+# Petnames (local-first naming)
+opengit petname add users alice &lt;z32-pubkey&gt;
+opengit petname add repos myproject &lt;z32-repo-key&gt;
+opengit info myproject</code></pre>
+<h2>Development</h2>
+<pre data-lang="bash"><code># Install deps (uses npm workspaces)
+npm install
+
+# Verify dep licenses (must pass before merge)
+node scripts/check-licenses.js
+
+# Run tests
+npm test
+
+# Run the end-to-end demo (skeleton)
+npm run demo</code></pre>
+<h2>License</h2>
+<p>Apache-2.0. All dependencies must also be permissively licensed; enforced by <code>scripts/check-licenses.js</code>.</p>
+</article>
+<footer>
+  <div class="wrap">
+    <p>
+      Apache-2.0 by default · No telemetry · No phone-home ·
+      <a href="https://github.com/bigdestiny2/opengit">source</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

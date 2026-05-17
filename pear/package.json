@@ -1,0 +1,15 @@
+{
+  "name": "opengit-pear",
+  "version": "0.0.9",
+  "main": "index.js",
+  "type": "commonjs",
+  "license": "Apache-2.0",
+  "description": "Pear-app shell for Opengit. Distributed via pear://opengit/<key>. v0.0.9 ships a documented shell; v0.1+ replaces it with a native Bare port of opengit-cli.",
+  "pear": {
+    "name": "opengit",
+    "type": "terminal"
+  },
+  "scripts": {
+    "dev": "pear run -d ."
+  }
+}

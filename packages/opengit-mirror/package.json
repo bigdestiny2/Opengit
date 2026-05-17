@@ -1,0 +1,16 @@
+{
+  "name": "opengit-mirror",
+  "version": "0.0.10",
+  "description": "Plaintext public-repo mirror. Default: hand-rolled Hyperswarm replication (zero extra deps). --blind-peer: run a real Holepunch blind-peer server (optional dep, RocksDB-backed). Either way, mirror operators see plaintext public-repo content; for private repos use opengit-relay.",
+  "license": "Apache-2.0",
+  "main": "lib/mirror.js",
+  "bin": {
+    "opengit-mirror": "bin/opengit-mirror.js"
+  },
+  "dependencies": {
+    "opengit-core": "*"
+  },
+  "optionalDependencies": {
+    "blind-peer": "^3.7.0"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "opengit-relay",
+  "version": "0.0.7",
+  "description": "Blind (encrypted) relay for private Opengit repos. Default path is native Hyperswarm Corestore replication (Apache-2.0). Optional HiveRelay-backed seeding via --use-hiverelay (pulls AGPL-3.0 deps).",
+  "license": "Apache-2.0",
+  "main": "lib/relay.js",
+  "bin": {
+    "opengit-relay": "bin/opengit-relay.js"
+  },
+  "dependencies": {
+    "opengit-core": "*",
+    "b4a": "^1.6.6",
+    "z32": "^1.1.0"
+  },
+  "optionalDependencies": {
+    "p2p-hiverelay-client": "^0.8.13"
+  }
+}

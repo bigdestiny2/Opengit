@@ -1,0 +1,30 @@
+{
+  "name": "opengit-core",
+  "version": "0.0.1",
+  "description": "Core library: repo, forge, identity over Corestore/Hypercore/Hyperbee/Hyperblobs",
+  "license": "Apache-2.0",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./repo": "./lib/repo.js",
+    "./forge": "./lib/forge.js",
+    "./identity": "./lib/identity.js",
+    "./constants": "./lib/constants.js"
+  },
+  "dependencies": {
+    "corestore": "^7.9.2",
+    "hypercore": "^11.29.0",
+    "hyperbee": "^2.27.3",
+    "hyperblobs": "^2.11.1",
+    "hyperdrive": "^11.13.0",
+    "hyperswarm": "^4.17.0",
+    "hyperdht": "^6.31.0",
+    "autobase": "^7.27.3",
+    "blind-peering": "^2.1.1",
+    "keet-identity-key": "^3.1.0",
+    "compact-encoding": "^2.15.0",
+    "b4a": "^1.6.6",
+    "sodium-universal": "^4.0.1",
+    "z32": "^1.1.0"
+  }
+}

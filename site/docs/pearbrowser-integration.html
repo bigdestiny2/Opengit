@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PearBrowser Integration — Opengit</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="doc-nav">
+  <div class="wrap nav-row">
+    <a href="/" class="home-link">⌬ Opengit</a>
+    <a href="/docs/quickstart.html">Quickstart</a>
+    <a href="/docs/readme.html" class="">README</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/feasibility.html" class="">Feasibility</a><a href="/docs/decentralization-audit.html" class="">Audit</a><a href="/docs/deep-audit.html" class="">Deep Audit</a><a href="/docs/improvement-research.html" class="">Research</a><a href="/docs/state.html" class="">State</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="active">PearBrowser</a><a href="/docs/licensing.html" class="">Licensing</a>
+  </div>
+</nav>
+<article class="doc-page wrap">
+<h1>PearBrowser Integration Plan</h1>
+<blockquote><p>Snapshot of <a href="https://github.com/bigdestiny2/PearBrowser">bigdestiny2/PearBrowser</a> and how Opengit repos surface as browseable content inside it.</p>
+<p><strong>Snapshot date:</strong> 2026-05-03 (latest commit <code>4d74c7c</code>, &quot;HTTPS parity: expectedOrigin + opt-in window.pear injection&quot;, default branch <code>main</code>).</p></blockquote>
+<hr>
+<h2>1. What PearBrowser actually is (verified)</h2>
+<p>A real iOS-native P2P browser. Bare Kit on the phone runs the full Hyperswarm stack — UDX hole-punching, HyperDHT membership, direct encrypted streams to other peers. The phone is a real peer.</p>
+<p>Three primary features:</p>
+<ol><li><strong>Decentralized App Store.</strong> Each HiveRelay exposes a <code>/catalog.json</code> endpoint listing P2P apps it knows about. PearBrowser browses configurable relays and lets the user install/launch apps.</li><li><strong>P2P browser.</strong> Fetches <code>hyper://&lt;driveKey&gt;/&lt;path&gt;</code> content via a <strong>hybrid path</strong>: HTTP-relay-first (1–2s latency to nearest HiveRelay gateway), Hyperswarm-P2P fallback / background sync. Whichever responds first wins; P2P keeps syncing for warm-cache future visits.</li><li><strong>Website builder.</strong> Compose blocks → publish as a Hyperdrive → ask a HiveRelay to seed it for 24/7 availability.</li></ol>
+<p>Implementation surfaces:</p>
+<ul><li><code>backend/hyper-proxy.js</code> — local HTTP server that bridges WebView → Hyperdrive content. Routes: <code>localhost:PORT/hyper/KEY/path</code>, <code>localhost:PORT/app/APP_ID/path</code>.</li><li><code>backend/relay-client.js</code> — HTTP client to HiveRelay gateways with circuit-breakers and configurable relay lists.</li><li><code>window.pear</code> injected bridge for in-WebView apps: identity, sync (Autobase), trusted-origin handshake.</li></ul>
+<p>PearBrowser already speaks <code>hyper://</code> natively. Anything we materialize as a Hyperdrive is browseable for free.</p>
+<hr>
+<h2>2. The integration question</h2>
+<blockquote><p>&quot;HiveRelay should be the backbone that makes the system persistent and it should be able to browse repos in PearBrowser.&quot;</p></blockquote>
+<p>Reformulated as a build question: what does PearBrowser need to do to render an Opengit repo? Three shapes, in order of intrusiveness:</p>
+<h3>Shape A — Relay HTTP gateway for Opengit (intrusive on HiveRelay; zero-touch on PearBrowser)</h3>
+<p><code>opengit-mirror</code> / <code>opengit-relay</code> adds HTTP routes:</p>
+<pre><code>GET https://relay/v1/opengit/&lt;repoKey&gt;/                    → repo overview (HTML)
+GET https://relay/v1/opengit/&lt;repoKey&gt;/tree/&lt;branch&gt;/&lt;path&gt;/ → directory listing
+GET https://relay/v1/opengit/&lt;repoKey&gt;/blob/&lt;branch&gt;/&lt;path&gt;  → file contents
+GET https://relay/v1/opengit/&lt;repoKey&gt;/commit/&lt;oid&gt;         → commit detail
+GET https://relay/v1/opengit/&lt;repoKey&gt;/refs                 → branches + tags
+GET https://relay/v1/opengit/&lt;repoKey&gt;/issues               → issue list</code></pre>
+<p>PearBrowser opens an <code>https://</code> URL via its existing webview. No code change on the browser side.</p>
+<p><strong>Pro:</strong> Fastest to ship. Reuses PearBrowser's HTTPS bridge wholesale. <strong>Con:</strong> Requires Opengit-specific routes on every relay operator. Centralizes the &quot;browseable view&quot; computation on the relay (which now needs to clone the repo and run git introspection — much bigger CPU/disk profile than serving Hyperdrive bytes). Doesn't work P2P-only — falls over if no relay is available.</p>
+<h3>Shape B — Repo→Hyperdrive snapshot (zero-touch on PearBrowser, zero-touch on HiveRelay) ★ recommended</h3>
+<p>Opengit (locally, by the repo owner — or by anyone holding the content key) <strong>renders the current repo state into a static HTML site</strong> and publishes it as a <strong>Hyperdrive</strong>. The Hyperdrive's key becomes the canonical browse address: <code>hyper://&lt;pagesDriveKey&gt;/</code>.</p>
+<pre><code>opengit-core repo (Corestore, refs Hyperbee, objects Hyperblobs)
+        │
+        │ opengit pages publish &lt;repo&gt;
+        ▼
+opengit-pages renderer (pure function: repo state → {path: bytes} map)
+        │
+        ▼
+Hyperdrive containing:
+  /index.html                      ← README + branch/commit list + links
+  /refs/                           ← branches + tags index page
+  /tree/&lt;branch&gt;/&lt;path&gt;/index.html ← directory listings
+  /blob/&lt;branch&gt;/&lt;path&gt;            ← raw file (Content-Type by extension)
+  /blob/&lt;branch&gt;/&lt;path&gt;.html       ← syntax-highlighted view (optional)
+  /commit/&lt;oid&gt;.html               ← commit metadata + diff
+  /issues/index.html               ← issue list
+  /issues/&lt;id&gt;.html                ← issue thread
+        │
+        ▼
+HiveRelay seeds it (existing flow — no special-casing needed)
+        │
+        ▼
+PearBrowser opens hyper://&lt;pagesDriveKey&gt;/ — already works, no change</code></pre>
+<p><strong>Pro:</strong> Zero code change on PearBrowser. Zero code change on HiveRelay. Reuses every existing piece of the persistence + delivery stack. The browse view is just another P2P static site, which is exactly what PearBrowser was designed for. <strong>Con:</strong> Snapshot has a freshness lag (re-render and re-publish on every push to repo). Hyperdrive entry per repo means N repos = N drive keys, but that's identical to &quot;N websites = N drives&quot; which the system already handles.</p>
+<h3>Shape C — Native opengit:// handler in PearBrowser (most invasive; ideal long-term)</h3>
+<p>Add <code>opengit://</code> to <code>hyper-proxy.js</code> alongside <code>hyper://</code>. Backend opens the Corestore directly, renders views server-side, serves via the local HTTP bridge.</p>
+<p><strong>Pro:</strong> Always live (no snapshot lag). Single canonical address per repo (the repo key, not a separate drive key). <strong>Con:</strong> Adds an Opengit dependency to PearBrowser's iOS bundle. Requires the rendering logic to run on the phone. Hardest to keep aligned across PearBrowser releases.</p>
+<hr>
+<h2>3. Recommendation</h2>
+<p><strong>Ship Shape B first.</strong> It's the right Bitcoin-strategy move:</p>
+<ul><li>It works without changing either neighbor (PearBrowser, HiveRelay)</li><li>Its persistence story is identical to PearBrowser's existing site-builder flow (publish drive, seed on relay)</li><li>The render output is reusable: <code>git web</code> style static viewers (Cgit, Gitiles), GitHub Pages, browser bookmarks all work against the same artifact</li><li>It composes cleanly with the existing &quot;owner offline + relay seeds&quot; guarantee from v0.0.4</li></ul>
+<p><strong>Layer Shape A on top later</strong> if operators want a single canonical https:// URL per repo (for non-PearBrowser browsers).</p>
+<p><strong>Defer Shape C</strong> until PearBrowser stabilizes and we're ready to upstream a protocol handler.</p>
+<hr>
+<h2>4. v0.0.6 — <code>opengit-pages</code> deliverables</h2>
+<p>Concrete scope for the next milestone:</p>
+<h3>4.1 <code>packages/opengit-pages/</code> — the renderer</h3>
+<p>A pure function <code>render(repo) → AsyncIterable&lt;{path, bytes}&gt;</code>. Reads the repo's HEAD via the shadow (since <code>ShadowRepo</code> already materializes a real <code>.git</code> directory and we have <code>git</code> in PATH). Generates HTML using simple string templates — no client-side JS.</p>
+<p>The output map has these top-level paths:</p>
+<pre><code>/                       → index.html (overview + branches + commits + README)
+/refs                   → refs/index.html (branches, tags)
+/tree/&lt;branch&gt;/[path/]  → tree/&lt;branch&gt;/[path/]index.html (dir listing)
+/blob/&lt;branch&gt;/&lt;path&gt;   → raw bytes (Content-Type from extension)
+/commit/&lt;oid&gt;           → commit/&lt;oid&gt;.html (metadata + diff)
+/issues                 → issues/index.html
+/issues/&lt;id&gt;            → issues/&lt;id&gt;.html
+/manifest.json          → repo metadata (PearBrowser app-style manifest)</code></pre>
+<p>The rendered site is a fully self-contained static site. No external dependencies, no JS framework, no fonts. Plays well with offline.</p>
+<h3>4.2 <code>OpengitForge.publishToPagesDrive(repo, opts)</code> — the publisher</h3>
+<p>Renders + writes the output to a <code>Hyperdrive</code> (sibling Corestore namespace <code>pages:&lt;repoKeyHex&gt;</code>). Returns <code>{ driveKey, hyperUrl }</code>. Idempotent — re-running re-renders and only writes what changed.</p>
+<h3>4.3 CLI: <code>opengit pages publish &lt;repo&gt;</code> and <code>opengit pages url &lt;repo&gt;</code></h3>
+<pre><code>$ opengit pages publish my-project
+rendered 47 pages from opengit://abc...
+hyper:// drive key: 1c2f3e...
+hyper-url: hyper://1c2f3e.../
+status: visible to PearBrowser via any seeding mirror/relay</code></pre>
+<h3>4.4 Auto-republish hook</h3>
+<p>Optional <code>opengit pages watch &lt;repo&gt;</code> runs in the background and re-renders on <code>refs/heads/*</code> updates (Hypercore append events on <code>ns:refs</code>). Snapshot lag becomes &quot;as fast as the refs Hyperbee notifies us&quot; — usually &lt;1s.</p>
+<h3>4.5 PearBrowser experience</h3>
+<p>User experience after v0.0.6 ships, with no PearBrowser code change required:</p>
+<pre><code>1. Alice runs `opengit pages publish my-repo` once
+2. Alice runs `opengit-mirror --repo &lt;pagesDriveKey&gt;` (or the existing
+   HiveRelay seeds it via the standard flow)
+3. Bob copies hyper://&lt;pagesDriveKey&gt;/ into PearBrowser
+4. Bob sees a forge-style web view of Alice's repo on his phone
+   - Browse files
+   - Read README, commit log, diffs
+   - Read issues
+5. Alice pushes a new commit; auto-watch re-renders pages drive within ~1s;
+   Bob's PearBrowser shows the update on next navigation</code></pre>
+<h3>4.6 What stays out of scope for v0.0.6</h3>
+<ul><li><strong>Write operations from PearBrowser</strong> (e.g. opening an issue from the phone) — possible later via the <code>window.pear</code> bridge talking to a backend RPC, but for v0.0.6 the pages site is read-only.</li><li><strong>Search across repos</strong> inside PearBrowser — still the indexer-relay problem (audit §8).</li><li><strong>PearBrowser's app-catalog format integration</strong> — emitting a <code>manifest.json</code> so a repo can also be installed as a &quot;Pear app&quot; if it has runnable HTML at root. We emit <code>manifest.json</code> in v0.0.6 as a forward-compat hook but don't promise app-store discovery yet.</li></ul>
+<hr>
+<h2>5. Architecture after v0.0.6</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│  Alice's machine                                                │
+│  ┌──────────────────────────┐                                   │
+│  │ Opengit repo (Corestore) │  ←── git push opengit://...       │
+│  │  refs / objects / meta   │                                   │
+│  │  issues / writers        │                                   │
+│  └──────────┬───────────────┘                                   │
+│             │ render (pure, deterministic)                       │
+│             ▼                                                   │
+│  ┌──────────────────────────┐                                   │
+│  │  Pages Hyperdrive         │  ←── opengit pages publish        │
+│  │  /index.html, /tree/...   │                                   │
+│  │  /blob/..., /commit/...   │                                   │
+│  └──────────┬───────────────┘                                   │
+└─────────────┼───────────────────────────────────────────────────┘
+              │ Hyperswarm replication (existing path)
+              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  HiveRelay (foundation network OR self-hosted, AGPL boundary)   │
+│  • Seeds the Pages Hyperdrive 24/7 — no Opengit-specific code   │
+│  • Serves it via existing relay HTTP gateway                    │
+│  • Serves the underlying repo Corestore for git clone           │
+└────────────────┬────────────────────────────────────────────────┘
+                 │ hyper:// or https:// (PearBrowser hybrid path)
+                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Bob's PearBrowser (iOS / future Android)                       │
+│  • Open hyper://&lt;pagesDriveKey&gt;/                                │
+│  • Hybrid fetch: HTTP from nearest relay (fast) + P2P (warm)    │
+│  • Read repo README, files, commits, issues                     │
+│  • All UI is plain HTML rendered by Opengit; no SPA, no JS dep  │
+└─────────────────────────────────────────────────────────────────┘</code></pre>
+<p>The whole right-hand side requires zero new code on PearBrowser or HiveRelay. The only Opengit-specific work is on the left: render Corestore → static Hyperdrive. Once that exists, every existing pipe in the network is reused.</p>
+<hr>
+<h2>6. Risks &amp; mitigations</h2>
+<table><thead><tr><th>Risk</th><th>Severity</th><th>Mitigation</th></tr></thead><tbody><tr><td>Rendering large repos is slow</td><td>Medium</td><td>Render incrementally — process refs that changed since last snapshot; cache per-blob HTML. v0.0.7 work.</td></tr><tr><td>Pages drive becomes the de-facto repo address (and the underlying Corestore is forgotten)</td><td>Medium</td><td>Always include <code>&lt;link rel=&quot;alternate&quot; href=&quot;opengit://&lt;repoKey&gt;&quot;&gt;</code> in every rendered page. Document that pages = view, repo = source-of-truth.</td></tr><tr><td>Snapshot lag confuses users (&quot;I pushed but the page didn't update&quot;)</td><td>Low</td><td>Auto-watch + pages drive metadata showing last-render time. UX shows it.</td></tr><tr><td>Private repo pages would leak content if seeded plaintext</td><td>High</td><td>If repo is private, refuse <code>pages publish</code> unless <code>--force-publish-encrypted</code> is set. When forced, the pages drive is encrypted with the same content key and seeded blindly via <code>opengit-relay</code> — collaborators-only access. PearBrowser doesn't currently support encrypted hyperdrive viewing; documented as a v0.0.7+ limit.</td></tr><tr><td>Render output doesn't match git semantics (e.g. submodules)</td><td>Low</td><td>Defer submodule rendering; show a placeholder card with the upstream URL.</td></tr></tbody></table>
+<hr>
+<h2>7. Action items</h2>
+<ul><li>[ ] Build <code>packages/opengit-pages/</code> per §4.1</li><li>[ ] Wire <code>OpengitForge.publishToPagesDrive</code> per §4.2</li><li>[ ] Add <code>opengit pages publish</code> / <code>opengit pages url</code> / <code>opengit pages watch</code> CLI</li><li>[ ] Tests: render a fixture repo, assert a stable snapshot of the output map</li><li>[ ] SPEC §12.x: document the pages-drive shape and the <code>&lt;link rel=&quot;alternate&quot;&gt;</code> reciprocity</li><li>[ ] Cross-link this doc from README, HIVERELAY-INTEGRATION.md, and SPEC §10</li><li>[ ] (Out of v0.0.6) Pull request to PearBrowser for an <code>opengit://</code> protocol handler (Shape C) when the project is mature enough to maintain that interface</li></ul>
+</article>
+<footer>
+  <div class="wrap">
+    <p>
+      Apache-2.0 by default · No telemetry · No phone-home ·
+      <a href="https://github.com/bigdestiny2/opengit">source</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

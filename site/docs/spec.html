@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spec — Opengit</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="doc-nav">
+  <div class="wrap nav-row">
+    <a href="/" class="home-link">⌬ Opengit</a>
+    <a href="/docs/quickstart.html">Quickstart</a>
+    <a href="/docs/readme.html" class="">README</a><a href="/docs/spec.html" class="active">Spec</a><a href="/docs/feasibility.html" class="">Feasibility</a><a href="/docs/decentralization-audit.html" class="">Audit</a><a href="/docs/deep-audit.html" class="">Deep Audit</a><a href="/docs/improvement-research.html" class="">Research</a><a href="/docs/state.html" class="">State</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/licensing.html" class="">Licensing</a>
+  </div>
+</nav>
+<article class="doc-page wrap">
+<h1>Opengit — Specification</h1>
+<blockquote><p>A fully open-source, P2P-native code forge built on the Pear/Bare/Holepunch stack. Designed to replace the operational and social layers GitHub provides, while remaining compatible with the unmodified <code>git</code> CLI.</p></blockquote>
+<p><strong>Status:</strong> Draft v0.1. Greenfield — nothing implemented yet.</p>
+<hr>
+<h2>0. Goals &amp; Non-Goals</h2>
+<h3>Goals</h3>
+<ul><li><strong>Drop-in git compatibility.</strong> <code>git clone opengit://...</code> and <code>git push opengit://...</code> must work with a stock git binary. No new VCS.</li><li><strong>No central server.</strong> Every running component (Pear app, relay, indexer, runner) is something anyone can host. No DNS-rooted authority.</li><li><strong>Always-available repos</strong> via opt-in pinning relays (HiveRelay), not by requiring repo owners to be online.</li><li><strong>Open standards end-to-end.</strong> All wire formats, schemas, and crypto primitives specified, not hidden behind proprietary services.</li><li><strong>Recognizable UX.</strong> Issues, PRs, releases, profiles, discovery — not a bare CLI tool, a forge.</li></ul>
+<h3>Non-Goals</h3>
+<ul><li><strong>Replacing git.</strong> Git stays. We host it.</li><li><strong>Anonymity by default.</strong> Identity is pseudonymous (pubkey), not anonymous. No Tor integration in v1.</li><li><strong>Solving global P2P search in v1.</strong> Search is delegated to opt-in indexer relays.</li><li><strong>Trustless CI / verifiable compute.</strong> Runners are trusted via signed manifests, not via ZK proofs (in v1).</li><li><strong>Replicating GitHub's enterprise SSO/SAML/audit log surface.</strong> Out of scope until much later.</li></ul>
+<hr>
+<h2>1. Architecture Overview</h2>
+<pre><code>┌───────────────────────────────────────────────────────────────┐
+│  Pear Desktop App   (Opengit forge UI — runs locally per user) │
+│  ┌──────────┬──────────┬──────────┬──────────┬──────────────┐ │
+│  │  Repos   │  Issues  │   PRs    │ Profile  │   Discover   │ │
+│  └──────────┴──────────┴──────────┴──────────┴──────────────┘ │
+└───────────────────────────┬───────────────────────────────────┘
+                            │
+                ┌───────────┴───────────┐
+                │   opengit-core (lib)  │  ← Bare module
+                │   - OpengitRepo       │
+                │   - OpengitIdentity   │
+                │   - OpengitForge      │
+                └───────────┬───────────┘
+                            │
+   ┌────────────────────────┼─────────────────────────┐
+   │                        │                         │
+   ▼                        ▼                         ▼
+Corestore                Autobase                Hyperswarm
+(per-repo)               (multi-writer            (DHT topic
+                          PRs, issues)             discovery)
+
+                            │
+                            ▼
+                   ┌─────────────────┐
+                   │   Hyperswarm    │
+                   │      DHT        │
+                   └────────┬────────┘
+                            │
+   ┌────────────────────────┼─────────────────────────┐
+   │                        │                         │
+   ▼                        ▼                         ▼
+HiveRelay              Indexer Relay            CI Runner
+(pinning, blind        (search, discovery)      (signed jobs)
+ mirroring)
+
+                            │
+                            ▼
+                   ┌─────────────────┐
+                   │  git CLI user   │
+                   │ (via            │
+                   │ git-remote-     │
+                   │  opengit)       │
+                   └─────────────────┘</code></pre>
+<p>Three deployable surfaces:</p>
+<ol><li><strong>Pear app</strong> — the user-facing forge. Runs on a user's machine, ships via Pear.</li><li><strong>Relays</strong> — long-running headless processes anyone can host: - <strong>Pinning relay</strong> (HiveRelay-based) — stores repo cores, serves them when owner is offline. - <strong>Indexer relay</strong> — crawls public repos it has access to, exposes search. - <strong>Runner</strong> — executes CI jobs against signed job manifests.</li><li><strong><code>git-remote-opengit</code></strong> — git remote helper binary so plain <code>git</code> interoperates.</li></ol>
+<hr>
+<h2>2. Core Primitives (Holepunch Stack Recap)</h2>
+<table><thead><tr><th>Primitive</th><th>Role in Opengit</th></tr></thead><tbody><tr><td><strong>Hypercore</strong></td><td>Append-only signed log. The atomic unit of replication. Used for: ref history, packfile storage, profile feeds, comment threads.</td></tr><tr><td><strong>Hyperbee</strong></td><td>B-tree KV on a Hypercore. Used for: refs (<code>refs/heads/main</code> → commit OID), issue index, profile metadata.</td></tr><tr><td><strong>Hyperdrive</strong></td><td>Filesystem on Hypercores. Used for: release artifacts, Pages content, repo working-tree snapshots if cached.</td></tr><tr><td><strong>Hyperblobs</strong></td><td>Blob storage on a Hypercore. Used for: git packfiles, user avatars, attachments.</td></tr><tr><td><strong>Corestore</strong></td><td>Manages a set of Hypercores under a single root key, with namespaces. Each Opengit repo is one Corestore.</td></tr><tr><td><strong>Autobase</strong></td><td>Linearizes writes from multiple writers into a deterministic view. Used for: PR comment threads, issue threads, repo collaborators with merge rights.</td></tr><tr><td><strong>Hyperswarm</strong></td><td>DHT-based peer discovery on a topic key. Used for: finding peers who hold a repo, finding indexers.</td></tr><tr><td><strong>HyperDHT</strong></td><td>The mainline Kademlia-style DHT. Underlying transport for swarm topics and direct connections.</td></tr><tr><td><strong>Slashtags</strong></td><td>Pubkey-rooted naming (<code>slash://alice/opengit</code>). Used for human-readable identity → key resolution.</td></tr><tr><td><strong>Bare</strong></td><td>Minimal JS runtime (alternative to Node). What Pear apps run on. Smaller surface, faster cold-start.</td></tr><tr><td><strong>Pear</strong></td><td>Application platform. Apps are addressed by key (<code>pear://...</code>), shipped P2P, run in Bare.</td></tr><tr><td><strong>HiveRelay</strong></td><td>Holepunch's relay product. Pins Hypercores so they remain available when origin peers are offline. Supports blind (encrypted) mirroring.</td></tr></tbody></table>
+<p>Everything below is built on these.</p>
+<hr>
+<h2>3. Repo Data Model</h2>
+<p>A repo is a <strong>Corestore</strong>. Its address is the public key of the <strong>manifest core</strong> (SPEC §3.1, v0.0.11). The owner holds the manifest core's private key (and the others).</p>
+<h3>3.1 Cores within a repo Corestore — the manifest is the anchor (v0.0.11)</h3>
+<pre><code>corestore
+├── ns:manifest      → Hyperbee   (PLAINTEXT discovery anchor — the repo address)
+├── ns:refs          → Hyperbee   (mutable ref → commit OID)        [enc if private]
+├── ns:objects       → Hyperblobs (git packfiles, content-addressed) [enc if private]
+├── ns:object-index  → Hyperbee   (oid → blob/pack location)         [enc if private]
+├── ns:meta          → Hyperbee   (repo metadata: name, desc, …)     [enc if private]
+├── ns:meta-keys     → Hyperbee   (PLAINTEXT wrapped content keys per collaborator)
+├── ns:refs-inputs   → Autobase   (multi-writer ref inputs)          [enc if private]
+├── ns:issues-inputs → Autobase   (issue threads)
+├── ns:prs-inputs    → Autobase   (PR threads + state)
+├── ns:releases      → Hyperdrive (release artifacts)
+├── ns:pages         → Hyperdrive (static Pages site)
+└── ns:ci            → Autobase   (CI job queue + results)</code></pre>
+<p><strong>Why the manifest core exists (A1, v0.0.11).</strong> Pre-v0.0.11 the repo address was the <em>refs</em> core key, and a cores-discovery record (<code>__cores__</code>) lived <em>inside</em> the refs Hyperbee. For <strong>private</strong> repos the refs core is AEAD-encrypted, so a freshly-invited collaborator who has only the repo key + an invite could not read <code>__cores__</code> without the content key — but the whole point of the invite is to <em>deliver</em> the content key (via the plaintext <code>ns:meta-keys</code>). They couldn't find the meta-keys core key because it was only listed in the encrypted refs core. Catch-22.</p>
+<p>The fix: a dedicated <strong><code>ns:manifest</code></strong> core, <strong>always plaintext</strong> (never AEAD-encrypted, even for private repos — it contains only public core keys + visibility, no secret content). Its key is the repo address. Resolution for any holder of the repo key:</p>
+<ol><li>Open the manifest core by key (plaintext — no content key needed).</li><li>Read <code>manifest.cores</code> → learn every other core's public key, incl. the plaintext <code>meta-keys</code> core.</li><li>Open <code>meta-keys</code>, find the wrapped invite for one's identity, unwrap → content key.</li><li>With the content key, open the encrypted cores (<code>refs</code>, <code>objects</code>, <code>object-index</code>, <code>meta</code>) and decrypt.</li></ol>
+<p><strong>Manifest record (<code>ns:manifest</code> Hyperbee):</strong></p>
+<pre data-lang="ts"><code>&quot;spec&quot;        → { value: &quot;opengit/v1&quot;, manifestVersion: 1 }
+&quot;visibility&quot;  → &quot;public&quot; | &quot;private&quot;
+&quot;cores&quot;       → { refs, objects, objectIndex, meta, metaKeys }  // hex public keys</code></pre>
+<p><strong>Remote-open contract.</strong> Opening a repo by key over the swarm is <em>eventually consistent</em>: the manifest core may not have replicated when <code>openRepo()</code> returns. The bound cores are therefore provisional. A remote MUST call <code>repo.refresh()</code> after joining the swarm + a beat; <code>refresh()</code> re-reads the manifest's <code>cores</code> record and rebinds the real cores (applying the content key to the encrypted ones if one has since been acquired via <code>repo.setContentKey()</code> — the cold-bootstrap path). Idempotent.</p>
+<p><strong>Backward compatibility.</strong> Pre-v0.0.11 repos (address = refs key, <code>__cores__</code> inside refs) still open: <code>openRepo</code> falls back to reading <code>__cores__</code> <em>only if it actually reads back</em> (proving the key is a real legacy refs core, not a v0.0.11 manifest core whose record hasn't replicated yet). New repos additionally keep writing <code>__cores__</code> into refs for public-repo legacy readers; it's redundant for the manifest path and unreadable (hence harmless) for private repos.</p>
+<h3>3.2 Refs schema (<code>ns:refs</code> Hyperbee)</h3>
+<pre data-lang="ts"><code>// Key                              Value
+&quot;refs/heads/main&quot;                 → { oid: &quot;a1b2c3...&quot;, updatedAt, signedBy }
+&quot;refs/heads/feature-x&quot;            → { oid: ..., updatedAt, signedBy }
+&quot;refs/tags/v1.2.3&quot;                → { oid: ..., updatedAt, signedBy, type: &quot;annotated&quot;|&quot;lightweight&quot; }
+&quot;HEAD&quot;                            → { ref: &quot;refs/heads/main&quot; }
+&quot;refs/opengit/forks/&lt;fork-key&gt;&quot;   → { ref: &quot;refs/heads/main&quot;, lastSeen }   // tracked forks</code></pre>
+<p>Every ref entry is signed by an authorized writer's key. Authorization is governed by the Autobase membership of the repo (see §3.5).</p>
+<h3>3.3 Objects schema (<code>ns:objects</code> Hyperblobs)</h3>
+<p>Git packfiles, stored as blobs. Index from git OID → blob ID lives in a sibling Hyperbee:</p>
+<pre data-lang="ts"><code>// Key (hex-encoded SHA-1 git OID)   Value
+&quot;&lt;oid&gt;&quot;                            → { blobId, size, type: &quot;blob&quot;|&quot;tree&quot;|&quot;commit&quot;|&quot;tag&quot;, inPack: &lt;packId&gt; }
+&quot;pack/&lt;packId&gt;&quot;                    → { blobId, size, objectCount, base, range: [firstOid, lastOid] }</code></pre>
+<p><strong>Push flow:</strong> Client sends a pack; server appends pack as a single blob, indexes its contents into the OID Hyperbee. Loose objects allowed but discouraged.</p>
+<p><strong>Fetch flow:</strong> Server walks from requested ref OIDs back to the client's <code>have</code> set, assembles a thin pack, streams it. Standard git smart protocol semantics, just over a Hyperswarm stream instead of HTTPS.</p>
+<p><strong>Garbage collection:</strong> Periodic — walk live refs, mark reachable OIDs, repack unreachable into a <code>gc-trash</code> core retained for N days, then truncate. Hypercore truncation is supported (it leaves a sparse log).</p>
+<h3>3.4 Repo meta (<code>ns:meta</code> Hyperbee)</h3>
+<pre data-lang="ts"><code>{
+  &quot;spec&quot;: { value: &quot;opengit/v1&quot; },
+  &quot;name&quot;: &quot;opengit-core&quot;,
+  &quot;description&quot;: &quot;P2P forge core lib&quot;,
+  &quot;license&quot;: &quot;Apache-2.0&quot;,
+  &quot;defaultBranch&quot;: &quot;main&quot;,
+  &quot;homepage&quot;: &quot;slash://alice/opengit-core&quot;,
+  &quot;createdAt&quot;: &lt;unix-ms&gt;,
+  &quot;owners&quot;: [&lt;pubkey&gt;, ...],
+  &quot;writers&quot;: [&lt;pubkey&gt;, ...],     // can push refs
+  &quot;moderators&quot;: [&lt;pubkey&gt;, ...],  // can moderate issues/prs
+  &quot;topics&quot;: [&quot;p2p&quot;, &quot;git&quot;, &quot;pear&quot;],
+  &quot;mirrors&quot;: [&lt;relay-pubkey&gt;, ...] // pinning relays
+}</code></pre>
+<h3>3.5 Multi-writer model (Autobase)</h3>
+<p>Single-writer cores work for solo repos but fail the &quot;multiple maintainers&quot; case. We use <strong>Autobase</strong> for any core that takes writes from multiple parties.</p>
+<h4>3.5.1 Multi-writer refs (v0.0.4)</h4>
+<p>Multi-writer is <strong>opt-in at repo create time</strong> (<code>createRepo(name, { multiwriter: true })</code>) and persisted in <code>ns:meta.multiwriter</code>. Single-writer repos created before v0.0.4 keep working unchanged: their refs live in the legacy <code>ns:refs</code> Hyperbee. Multi-writer repos use an Autobase whose inputs live under <code>ns:refs-inputs</code> and whose view contains:</p>
+<ul><li><code>refs</code> — <code>ref-name → { oid, updatedAt, by, sig }</code></li><li><code>writers</code> — <code>pubkey-hex → { addedBy, at }</code></li></ul>
+<p>The legacy <code>ns:refs</code> Hyperbee is left empty for multi-writer repos.</p>
+<p><strong>Input shapes</strong> (each input is appended to a writer's local Autobase core, all signed):</p>
+<pre data-lang="ts"><code>{ type: 'ref-set',       ref, oldOid, newOid, by, at, sig }
+{ type: 'ref-del',       ref,                 by, at, sig }
+{ type: 'add-writer',    pubkey,               by, at, sig }
+{ type: 'remove-writer', pubkey,               by, at, sig }</code></pre>
+<p><strong>Apply function</strong> (deterministic; same on every replica — see <a href="packages/opengit-core/lib/multi-refs.js">packages/opengit-core/lib/multi-refs.js</a>):</p>
+<ol><li>Verify <code>sig</code> against <code>by</code>'s ed25519 pubkey over <code>canonicalize(payload)</code> (sorted keys, omit <code>sig</code>).</li><li>For <code>ref-set</code>/<code>ref-del</code>: check <code>by</code> is currently in the writers set (or in the bootstrap writers from <code>ns:meta.bootstrap</code>).</li><li>For <code>ref-set</code>: check <code>oldOid</code> matches the current OID (fast-forward / non-FF rejection).</li><li>For <code>add-writer</code>/<code>remove-writer</code>: only <strong>bootstrap owners</strong> may execute (v0.0.4 limit; v0.0.5 will support owner promotion/demotion chains).</li><li>Apply to view; ignore unknown types (forward-compat).</li></ol>
+<p><strong>Conflict resolution.</strong> Two writers concurrently setting the same ref to different OIDs from the same <code>oldOid</code>: Autobase's deterministic ordering picks one; the loser's <code>oldOid</code> no longer matches and its update silently no-ops. The losing writer's client should detect their input wasn't applied and retry from the new HEAD (standard <code>git push</code> rebase loop).</p>
+<p><strong>Bootstrap</strong> (<code>ns:meta.bootstrap</code>): seeded at init from the creator's identity. Format: <code>{ owners: [hex...], writers: [hex...] }</code>. Persisted in plaintext meta so peers can compute the same apply view from the same inputs.</p>
+<p><strong>Other anyone-can-append cores</strong> (out of scope until later milestones): <code>ns:issues</code>, <code>ns:prs</code>, <code>ns:ci</code> — anyone-can-append, with a moderation layer applied by the Autobase view. v0.5+ work.</p>
+<h3>3.6 Forks</h3>
+<p>A fork is a new Corestore whose <code>ns:meta</code> records <code>parentRepo: &lt;upstream-key&gt;</code>. Its <code>ns:objects</code> is a separate core, but git's CAS means only divergent commits actually consume new bytes. Pulling from upstream is just <code>git fetch</code> against the upstream key — Opengit doesn't need to model &quot;fork relationship&quot; beyond the metadata pointer.</p>
+<h3>3.7 Encryption &amp; content keys (v0.0.2)</h3>
+<p>Every repo has a <strong>visibility</strong>: <code>public</code> or <code>private</code>. Public repos are unencrypted; their cores are readable by anyone who can replicate the swarm topic. Private repos use per-block Hypercore encryption with a <strong>content key</strong> distinct from the repo's discovery key.</p>
+<h4>3.7.1 Key hierarchy</h4>
+<pre><code>content-key       (32 bytes, generated at private-repo init)
+├── per-block encryption key for every Hypercore in the Corestore
+├── private-topic-secret = HKDF(content-key, &quot;opengit/v1:topic&quot;)
+│       ↳ used to derive the swarm topic so DHT observers cannot
+│         enumerate private-repo existence by repo-key alone
+└── (v0.0.3+) wrapped per collaborator under their identity public key,
+    stored in ns:meta-keys (a sibling Hyperbee)</code></pre>
+<p>The discovery key (the repo's public key) and the content key are <strong>independent</strong>. A blind relay can hold the discovery key (to advertise the repo on the DHT) without holding the content key (so it cannot decrypt blocks). This is the property that makes blind relaying meaningful.</p>
+<h4>3.7.2 v0.0.2 storage of content keys</h4>
+<p>Pending the v0.0.3 wrapped-key scheme, content keys are stored locally per profile in a keyring file:</p>
+<pre><code>$OPENGIT_HOME/$PROFILE/keys/&lt;repo-key-hex&gt;.json</code></pre>
+<p>Format:</p>
+<pre data-lang="ts"><code>{
+  &quot;repoKey&quot;: &quot;&lt;hex&gt;&quot;,
+  &quot;contentKey&quot;: &quot;&lt;base64&gt;&quot;,
+  &quot;createdAt&quot;: &lt;unix-ms&gt;,
+  &quot;label&quot;: &quot;private-repo-name&quot;   // user-friendly tag
+}</code></pre>
+<p>Sharing with collaborators is <strong>out-of-band in v0.0.2</strong> (sneakernet, encrypted message, USB key). v0.0.3 introduces in-protocol wrapped-key sharing.</p>
+<h4>3.7.3 What's encrypted vs not</h4>
+<table><thead><tr><th>Surface</th><th>Encrypted?</th><th>Notes</th></tr></thead><tbody><tr><td><code>ns:refs</code> (private repo)</td><td>Yes</td><td>Refs themselves leak commit topology if unencrypted; encrypt.</td></tr><tr><td><code>ns:objects</code> (private repo)</td><td>Yes</td><td>Pack/blob bytes encrypted.</td></tr><tr><td><code>ns:object-index</code> (private repo)</td><td>Yes</td><td>Encrypts oid → blob mapping.</td></tr><tr><td><code>ns:meta</code> (private repo)</td><td>Yes</td><td>Even repo name leaks.</td></tr><tr><td><strong>Discovery key</strong></td><td>No (by definition)</td><td>The thing the DHT advertises. Always public; that's its job.</td></tr><tr><td><strong>Per-block public-write signatures</strong></td><td>No</td><td>Hypercore's writer-auth signature is metadata; needed by replicators.</td></tr></tbody></table>
+<p><strong>Public-repo cores are unencrypted</strong> — the encryption parameter is omitted, and Hypercore reads/writes plaintext. This is by design; public repos are advertised content.</p>
+<h4>3.7.4 Backwards compatibility</h4>
+<p>A repo's visibility is fixed at init time. Switching from public to private requires creating a new Corestore (new repo key); we do not support in-place re-encryption in v1. This is documented as an explicit limitation.</p>
+<h4>3.7.5 Wrapped-key collaborator sharing (v0.0.4)</h4>
+<p>The content key for a private repo is shared with collaborators by <strong>wrapping</strong> it under each collaborator's identity public key, using libsodium's sealed-box construction.</p>
+<pre><code>wrap(content_key, recipient_id_pub):
+  x_pub      = ed25519_pk_to_curve25519(recipient_id_pub)
+  ciphertext = crypto_box_seal(content_key, x_pub)   // 48 bytes overhead + 32 bytes payload</code></pre>
+<p>Wrapped entries are stored in <strong><code>ns:meta-keys</code></strong> — a separate Hyperbee that is <strong>not</strong> encrypted with the repo's content key. This is intentional: a freshly-invited collaborator needs to read their wrapped entry <em>before</em> they have the content key. The wrapped value inside the entry is itself a sealed-box ciphertext, so the content key never appears in plaintext on disk or on the wire.</p>
+<p><strong><code>ns:meta-keys</code> schema:</strong></p>
+<pre data-lang="ts"><code>// Key                             Value
+&quot;&lt;recipient-id-pub-hex&gt;&quot;         → {
+  wrappedKey: &quot;&lt;base64&gt;&quot;,        // sealed-box ciphertext
+  addedBy:    &quot;&lt;owner-id-pub-hex&gt;&quot;,
+  addedAt:    &lt;unix-ms&gt;,
+  label:      &quot;Bob&quot;              // optional human label, advisory
+}</code></pre>
+<p><strong>Owner-side flow</strong> (issue an invite):</p>
+<pre><code>forge.openRepo(repoKey)
+  → repo.addInvite(bobIdentityPubKey, { label: 'Bob' })</code></pre>
+<p><strong>Recipient-side flow</strong> (accept an invite):</p>
+<pre><code>forge.openRepo(repoKey)             // public-mode initially
+  → ck = repo.acceptInvite(myIdentity)
+  → if ck: keyring.put(repoKeyHex, ck) — now the repo opens as private</code></pre>
+<p><strong>Privacy properties:</strong></p>
+<ul><li>The list of recipient pubkeys (i.e. <em>who is invited</em>) is visible to anyone who replicates the discovery key. Acceptable for v0.0.4. v0.0.5 may move membership under a separate &quot;membership encryption key&quot; derived from the content key + a per-collaborator identity, hiding membership from outside observers.</li><li>The wrapped content key value can only be opened by the recipient holding the matching identity secret key.</li><li>Sealed boxes are anonymous on the sender side: the wrapped entry does not reveal the owner's identity. Authorship is asserted via the <code>addedBy</code> field, not by sealed-box identity.</li></ul>
+<p><strong>Revocation.</strong> <code>repo.revokeInvite(pubkey)</code> removes the wrapped entry. Existing collaborators who already unwrapped the key still hold it; true revocation requires content-key rotation (re-encrypt all cores under a new content key, re-issue invites). v0.5 work.</p>
+<p><strong>Self-invite on init.</strong> When a private repo is created with an identity, the owner is auto-invited. This means a backup of the repo alone (without the keyring) is enough to recover the content key, given the owner's identity is intact. Documented in <a href="packages/opengit-core/lib/repo.js">packages/opengit-core/lib/repo.js</a>.</p>
+<hr>
+<h2>4. Identity</h2>
+<h3>4.1 Identity primitive</h3>
+<p>A user identity is a <strong>keypair</strong>. The pubkey is the canonical identifier.</p>
+<p>The user's &quot;profile&quot; is a single Hypercore (<code>identity-feed</code>) they own and append to:</p>
+<pre data-lang="ts"><code>// Each entry is signed by the identity key.
+{ type: &quot;profile.set&quot;,   data: { displayName, bio, avatar: &lt;hyperdrive-key&gt;, links: [...] } }
+{ type: &quot;repo.create&quot;,   data: { repoKey, name } }
+{ type: &quot;repo.star&quot;,     data: { repoKey, at } }
+{ type: &quot;user.follow&quot;,   data: { pubkey, at } }
+{ type: &quot;comment&quot;,       data: { repoKey, threadId, body, parentRef } }
+{ type: &quot;key.attest&quot;,    data: { sshPubkey, gpgFingerprint } }   // for signed commits</code></pre>
+<h3>4.2 Naming (Slashtags + petnames)</h3>
+<p>Pubkeys are unusable as names. We use a layered approach with local petnames as the <strong>floor</strong> (always works, fully decentralized) and Slashtags / indexer registries as <strong>opt-in convenience layers</strong> on top.</p>
+<ul><li><strong>Local petnames (v0.0.2)</strong> — your client maps <code>alice</code> → pubkey, <code>myproject</code> → repo-key in a local file. Always works; no network involved. See §4.3.</li><li><strong>Slashtags URLs (v0.0.4+)</strong> — <code>slash://&lt;pubkey&gt;</code> and aliases. Slashtags supports a &quot;drive&quot; metadata system at each pubkey for serving discoverable info.</li><li><strong>Optional global registries (v0.0.5+)</strong> — opt-in indexer relays publish <code>name → pubkey</code> Hyperbees; multiple competing ones; users choose which they trust. Squatting is the registry's problem.</li></ul>
+<p>No central name registry in v1. Names are advisory, keys are authoritative. Petnames are the canonical naming UX for v0.0.2.</p>
+<h3>4.3 Petname file (v0.0.2)</h3>
+<p>The petname store is a JSON file at:</p>
+<pre><code>$OPENGIT_HOME/$PROFILE/petnames.json</code></pre>
+<p>Format:</p>
+<pre data-lang="ts"><code>{
+  &quot;version&quot;: 1,
+  &quot;users&quot;: {
+    &quot;alice&quot;: { &quot;key&quot;: &quot;&lt;z32-or-hex-pubkey&gt;&quot;, &quot;addedAt&quot;: &lt;unix-ms&gt;, &quot;note&quot;: &quot;&quot; }
+  },
+  &quot;repos&quot;: {
+    &quot;myproject&quot;:   { &quot;key&quot;: &quot;&lt;z32-or-hex-repo-key&gt;&quot;, &quot;addedAt&quot;: &lt;unix-ms&gt;, &quot;note&quot;: &quot;&quot; },
+    &quot;alice/forge&quot;: { &quot;key&quot;: &quot;&lt;z32-or-hex-repo-key&gt;&quot;, &quot;addedAt&quot;: &lt;unix-ms&gt;, &quot;note&quot;: &quot;&quot; }
+  }
+}</code></pre>
+<p>Resolution rules:</p>
+<ul><li>A petname must match <code>[a-zA-Z][a-zA-Z0-9._\-/]{0,63}</code>. The slash is allowed for <code>&lt;user&gt;/&lt;repo&gt;</code> aesthetics but has <strong>no semantic effect</strong> — it is just a name.</li><li>Names that look like keys (52 z32 chars or 64 hex chars) are rejected to avoid ambiguity at resolution.</li><li>Resolution order: literal key → petname lookup → unresolved (error).</li><li>The CLI's <code>--petname</code> flag and any URL-shaped string are resolved through this file before hitting the swarm.</li></ul>
+<p>Updates are atomic write-then-rename. Concurrent writers on a single file are not supported (single-user-per-profile assumption).</p>
+<h3>4.4 Signed commits</h3>
+<p>Identity key derives an SSH/PGP keypair for signing git commits and tags. The <code>key.attest</code> entry binds that derived key to the identity feed, so anyone who has the identity feed can verify commit signatures without out-of-band trust.</p>
+<hr>
+<h2>5. Wire Protocols</h2>
+<h3>5.1 <code>git-remote-opengit</code></h3>
+<p>A remote helper (per <a href="https://git-scm.com/docs/gitremote-helpers">gitremote-helpers(1)</a>) so <code>git</code> can speak Opengit.</p>
+<p><strong>Invocation:</strong> <code>git clone opengit://&lt;repo-key&gt;[/&lt;branch&gt;] [&lt;dir&gt;]</code></p>
+<p><strong>Capability set:</strong> <code>connect</code>, <code>option</code>, <code>list</code>. (We do <strong>not</strong> advertise <code>fetch</code>/<code>push</code>/<code>import</code>/<code>export</code>; <code>connect</code> is sufficient and lets git itself drive pack negotiation.)</p>
+<p><strong>Architecture: shadow-bridge.</strong> The helper does not reimplement git's smart protocol. Instead, it maintains a <strong>shadow bare git repo</strong> per remote at:</p>
+<pre><code>$OPENGIT_HOME/profiles/&lt;profile&gt;/shadow/&lt;repo-key-hex&gt;.git</code></pre>
+<p>The shadow is a cache; the <strong>Corestore is the source of truth</strong> for replication. The flow:</p>
+<pre><code>                     git CLI
+                        ▲ stdin/stdout (smart-protocol bytes)
+                        │
+                        ▼
+            git-remote-opengit  (this helper)
+              │                              │
+              │ pre:  Corestore → shadow     │  post: shadow → Corestore
+              ▼                              ▼
+            Corestore                     ShadowRepo
+            (replicated via               (bare .git dir
+             Hyperswarm)                   on disk)
+                                              │
+                                              │ spawn
+                                              ▼
+                                    git-upload-pack &lt;shadow&gt;     (fetch)
+                                    git-receive-pack &lt;shadow&gt;    (push)
+                                              ↕ stdio
+                                          (piped to/from helper's stdio)</code></pre>
+<p><strong>Lifecycle of a fetch (<code>git clone</code> / <code>git fetch opengit://...</code>):</strong></p>
+<ol><li>Helper opens the remote Corestore via <code>OpengitForge.openRepo(key)</code>.</li><li>Joins the swarm topic; replicates refs Hyperbee + objects Hyperblobs.</li><li>Waits up to <code>OPENGIT_PEER_TIMEOUT_MS</code> for a peer (mirror or origin) to respond. If never connected, exits with code 3 and a &quot;no peers reachable&quot; message (distinct from &quot;empty repo&quot;).</li><li><strong>Sync Corestore → shadow</strong>: writes refs to <code>&lt;shadow&gt;/refs/...</code>, packfiles to <code>&lt;shadow&gt;/objects/pack/</code>, runs <code>git index-pack</code> to generate <code>.idx</code> for any pack lacking one.</li><li>On <code>connect git-upload-pack</code>: helper sends an empty-line ack, then spawns <code>git upload-pack &lt;shadow&gt;</code> and pipes stdio bidirectionally between git (parent) and upload-pack (child).</li><li>Helper exits when the subprocess exits.</li></ol>
+<p><strong>Lifecycle of a push (<code>git push opengit://...</code>):</strong></p>
+<ol><li>Steps 1–4 as above.</li><li>On <code>connect git-receive-pack</code>: spawn <code>git receive-pack &lt;shadow&gt;</code>, pipe stdio.</li><li>After the subprocess exits, <strong>sync shadow → Corestore</strong>: enumerate any new packs in <code>&lt;shadow&gt;/objects/pack/*.pack</code> not already in Corestore; store each as a Hyperblobs entry; copy ref updates from <code>&lt;shadow&gt;/refs/...</code> into the refs Hyperbee.</li><li>(Multi-writer ref auth is enforced at this step — only writers in <code>ns:meta.writers</code> may update refs. v0.0.3 ships with single-writer.)</li></ol>
+<p><strong>Why shadow-bridge.</strong> Reimplementing the git smart protocol in JS is multi-month work and prone to subtle bugs (haves/wants negotiation, multi_ack, shallow, partial). Letting <code>git upload-pack</code>/<code>git receive-pack</code> do the protocol work makes correctness a property of git itself; the helper is reduced to &quot;keep the shadow in sync.&quot; Cost: a runtime dependency on the <code>git</code> binary being installed (ubiquitous; acceptable). Future: a libgit2- or pure-JS-based bridge for browser/Bare-only environments.</p>
+<p><strong>Local fast path.</strong> If the helper is running alongside the Pear app, it can read from the app's already-open Corestore over a local IPC socket — no network round trip for self-owned repos. (Targeted for v0.0.4.)</p>
+<p><strong>Stream handling.</strong> The helper switches from line-based stdin (helper protocol) to byte-mode (smart-protocol passthrough) at the moment of <code>connect</code>. Implemented with a custom buffered line reader so that any bytes after the connect command end up in the subprocess's stdin without loss.</p>
+<h3>5.2 RPC over Protomux</h3>
+<p>Channel name: <code>opengit/repo/1</code>. Messages cenc-encoded.</p>
+<pre><code>// Client → Server
+{ type: &quot;list-refs&quot; }
+{ type: &quot;fetch&quot;, wants: [oid...], haves: [oid...] }
+{ type: &quot;push&quot;,  pack: &lt;bytes&gt;, updates: [{ ref, oldOid, newOid, signature }] }
+{ type: &quot;subscribe-refs&quot; }   // long-lived, stream future ref updates
+
+// Server → Client
+{ type: &quot;refs&quot;, entries: [{ ref, oid }...] }
+{ type: &quot;pack&quot;, bytes: &lt;stream&gt; }
+{ type: &quot;push-result&quot;, updates: [{ ref, ok, error? }] }
+{ type: &quot;ref-update&quot;, ref, oldOid, newOid }   // pushed updates</code></pre>
+<h3>5.3 Discovery topics</h3>
+<p>Topics are SPEC-version-prefixed so a future protocol revision forms a disjoint network rather than colliding silently with v1 peers.</p>
+<pre><code>&quot;opengit/v1:repo:public:&lt;repo-key-z32&gt;&quot;   → public repo peers (key derives the topic)
+&quot;opengit/v1:repo:private:&lt;shared-secret&gt;&quot; → private repo peers (content-key-derived secret;
+                                            DHT observers cannot enumerate private repos
+                                            by repo-key alone)
+&quot;opengit/v1:user:&lt;identity-key-z32&gt;&quot;      → peers serving an identity feed
+&quot;opengit/v1:mirror&quot;                       → public-repo mirrors announcing themselves
+&quot;opengit/v1:relay:blind&quot;                  → blind (encrypted) relays
+&quot;opengit/v1:index&quot;                        → indexer relays
+&quot;opengit/v1:runner&quot;                       → CI runners offering work</code></pre>
+<h3>5.4 Canonical encoding</h3>
+<p>User-visible identifiers (URLs, CLI args, copy-paste) are <strong>z32</strong> (Base32 with no padding, RFC 4648 alphabet variant). Internal JSON metadata and protocol fields use <strong>hex</strong>. The two must round-trip via <code>OpengitForge._resolveKey</code>. URL form is <code>opengit://&lt;z32-repo-key&gt;[/path]</code>. Mixed encoding within a single context is forbidden.</p>
+<blockquote><p><strong>v0.0.11 revision.</strong> The content-key-derived private topic below is <strong>no longer used for the default replication path</strong> — it broke private-repo cold-bootstrap (a freshly-invited collaborator has the repo key but not yet the content key, so could not compute the content-key-derived topic to even replicate the manifest/meta-keys needed to <em>get</em> the content key). As of v0.0.11 <strong>all</strong> repos — public and private — join the topic derived from the (manifest) repo key: <code>blake2b(&quot;opengit/v1:repo:public:&quot; + repoKeyZ32)</code>. This is sound because the topic is itself a hash of the repo key: an observer must already know the repo key to compute and watch it, at which point the &quot;hide existence&quot; property is moot. The narrower property (a repo-key holder who lacks the content key cannot observe content <em>activity</em>) is a deferred, optional v0.1+ hardening implemented as a <em>second</em> topic the encrypted cores additionally join. <code>privateRepoTopic()</code> remains exported for that future use; <code>_topicForRepo()</code> returns the manifest-keyed public topic for everything.</p></blockquote>
+<h3>5.5 Private-topic derivation (v0.0.2, superseded as default by v0.0.11 — see note above)</h3>
+<p>For private repos, the swarm topic is derived from the <strong>content key</strong> rather than the public repo key, so DHT observers cannot enumerate private-repo existence by guessing repo keys.</p>
+<pre><code>private-topic-secret = blake2b(
+  domain    = &quot;opengit/v1:topic:private&quot;,
+  contentKey = &lt;32 bytes&gt;
+)                                                    // 32 bytes
+private-topic = blake2b(private-topic-secret)        // 32 bytes, what swarm.join takes</code></pre>
+<p>Concretely (sodium-universal):</p>
+<pre data-lang="js"><code>const out = b4a.alloc(32)
+sodium.crypto_generichash(out, b4a.concat([
+  b4a.from('opengit/v1:topic:private:'),
+  contentKey
+]))
+const privateTopic = out</code></pre>
+<p>Only collaborators (those who hold the content key) compute the same private topic. A blind relay that has been authorized for a private repo must be given the content key (or a topic-only key derivable from it) so it can advertise the topic; this is part of the &quot;authorize a blind relay for a private repo&quot; flow specified in v0.0.3.</p>
+<p>Public-topic derivation remains:</p>
+<pre><code>public-topic = blake2b(&quot;opengit/v1:repo:public:&quot; + repoKeyZ32)</code></pre>
+<hr>
+<h2>6. Issues, PRs, Discussions</h2>
+<h3>6.1 Issues (v0.0.5)</h3>
+<p>Each issue is a thread in an Autobase whose inputs live at <code>ns:issues-inputs</code>. The view exposes two sub-bees:</p>
+<ul><li><strong><code>issues</code></strong> — <code>issueId → { state, title, body, author, openedAt, closedAt?, labels[], assignees[], commentCount }</code></li><li><strong><code>threads</code></strong> — <code>&lt;issueId&gt;/&lt;at-padded-hex&gt;/&lt;author-hex&gt; → { kind: 'open'|'comment'|'close'|'reopen', body, author, at, parentId? }</code> (lex-sorted by time so chronology is a single range read)</li></ul>
+<p><strong>Inputs</strong> (each appended by the contributor's writer core, signed):</p>
+<pre data-lang="ts"><code>{ type: &quot;issue.open&quot;,    issueId, by, at, title, body,           sig }
+{ type: &quot;issue.comment&quot;, issueId, by, at, body, parentId?,       sig }
+{ type: &quot;issue.close&quot;,   issueId, by, at, reason?,               sig }
+{ type: &quot;issue.reopen&quot;,  issueId, by, at, reason?,               sig }
+{ type: &quot;issue.label&quot;,   issueId, by, at, add: [], remove: [],   sig }
+{ type: &quot;issue.assign&quot;,  issueId, by, at, assignees: [],         sig }</code></pre>
+<p><strong>Apply rules</strong> (deterministic; see <a href="packages/opengit-core/lib/issues.js">packages/opengit-core/lib/issues.js</a>):</p>
+<table><thead><tr><th>Action</th><th>Permitted by</th></tr></thead><tbody><tr><td><code>issue.open</code></td><td>Anyone (signed). First-write-wins on <code>issueId</code>.</td></tr><tr><td><code>issue.comment</code></td><td>Anyone (signed). Issue must already exist.</td></tr><tr><td><code>issue.close</code> / <code>issue.reopen</code></td><td>The issue author OR a moderator.</td></tr><tr><td><code>issue.label</code> / <code>issue.assign</code></td><td>Moderators only (owners are implicit moderators).</td></tr></tbody></table>
+<p><strong>Bootstrap.</strong> The apply function reads <code>bootstrap.owners</code> and <code>bootstrap.moderators</code> from <code>ns:meta</code> at apply-init. Owners are merged into moderators. v0.0.5 has no in-protocol moderator-management beyond bootstrap; v0.0.6 will add moderator add/remove inputs analogous to writer-management on multi-writer refs.</p>
+<p><strong>Spam handling.</strong> All inputs are persisted in the input log forever (Hypercore is append-only). The apply function omits unsigned or invalid inputs from the view. Moderator-emitted <code>tombstone</code> entries (planned v0.0.6) will additionally suppress specific entries from the view, leaving the bytes in the log but invisible in the UI. Periodic snapshot+truncate (planned v0.5+) reclaims storage.</p>
+<h3>6.2 Pull requests</h3>
+<p>A PR references <strong>a fork</strong> plus a target ref:</p>
+<pre data-lang="ts"><code>{ type: &quot;pr.open&quot;, prId, by, fromRepo: &lt;fork-key&gt;, fromRef, toRef, title, body, at }
+{ type: &quot;pr.comment&quot;, prId, by, body, parentId, at }
+{ type: &quot;pr.review&quot;, prId, by, verdict: &quot;approve&quot;|&quot;request-changes&quot;|&quot;comment&quot;, body, at }
+{ type: &quot;pr.update&quot;, prId, by, fromRef, lastCommitOid, at }   // contributor pushed more
+{ type: &quot;pr.merge&quot;,  prId, by, mergeOid, strategy: &quot;merge&quot;|&quot;squash&quot;|&quot;rebase&quot;, at }
+{ type: &quot;pr.close&quot;,  prId, by, reason, at }</code></pre>
+<p><strong>Merge flow:</strong></p>
+<ol><li>Maintainer's client fetches the fork's <code>fromRef</code> into the upstream's local Corestore (objects only).</li><li>Maintainer creates a merge commit / rebase / squash locally.</li><li>Pushes the resulting OID onto the target branch (normal ref update).</li><li>Appends <code>pr.merge</code> to <code>ns:prs</code>.</li></ol>
+<p>The PR system doesn't need its own merge logic — it's just git. The PR thread is metadata.</p>
+<h3>6.3 Discussions</h3>
+<p>A separate <code>ns:discussions</code> Autobase, schema-compatible with issues but without state machines (open/closed). Threaded comments only.</p>
+<hr>
+<h2>7. Discovery &amp; Search</h2>
+<p>This is the riskiest area. The design accepts that <strong>global P2P search is unsolved</strong> and instead delegates to opt-in indexer relays.</p>
+<h3>7.1 Indexer relay</h3>
+<p>A long-running peer that:</p>
+<ol><li>Subscribes to a configurable allowlist or open-firehose of public repos.</li><li>Replicates each repo's <code>ns:meta</code>, <code>ns:refs</code>, and (configurable) <code>ns:objects</code>.</li><li>Builds local search indexes: - <strong>Repo metadata index</strong> — name, description, topics, license, owner. - <strong>Code index</strong> — extract text from blobs, build inverted index. (Optional, expensive.) - <strong>Issue/PR index</strong> — title + body full-text.</li><li>Exposes a query API as a Hyperbee view + an RPC channel:</li></ol>
+<pre><code>// Client → Indexer
+{ type: &quot;search.repos&quot;, query, filters: { topic, license, lang }, limit }
+{ type: &quot;search.code&quot;, query, repoFilter, limit }
+{ type: &quot;search.issues&quot;, query, repoFilter, state, limit }
+{ type: &quot;trending&quot;, window: &quot;day&quot;|&quot;week&quot;|&quot;month&quot; }</code></pre>
+<h3>7.2 Trust model for indexers</h3>
+<p>Users configure a list of indexer pubkeys they trust. Multiple indexers can be queried in parallel; results union'd and deduplicated. Bad indexers can be removed; users can run their own.</p>
+<h3>7.3 Repo discovery without an indexer</h3>
+<p>For known-key fetch: just join <code>opengit:repo:&lt;repo-key&gt;</code> and ask. No indexer needed.</p>
+<p>For &quot;I follow Alice, what is she working on&quot;: pull Alice's identity feed, render her <code>repo.create</code> and <code>repo.star</code> events. This is the GitHub &quot;activity feed&quot; pattern, no indexer needed.</p>
+<p>For &quot;find a repo about X&quot;: you need an indexer.</p>
+<hr>
+<h2>8. CI / Runners</h2>
+<h3>8.1 Job model</h3>
+<p>Repos declare CI in a workflow file (<code>.opengit/workflows/*.yml</code>), syntax intentionally GitHub-Actions-shaped for migration ease:</p>
+<pre data-lang="yaml"><code>name: test
+on: [push, pull_request]
+runs-on: [opengit/ubuntu-22.04]   # runner capability tag
+jobs:
+  test:
+    steps:
+      - uses: actions/checkout
+      - run: npm test</code></pre>
+<h3>8.2 Job lifecycle</h3>
+<ol><li>Push to repo → repo's <code>ns:ci</code> Autobase appends <code>ci.job.queued { repoKey, ref, oid, workflow }</code>.</li><li>Repo's <code>ns:meta</code> lists trusted runner pubkeys (or &quot;any runner with capability X who has staked Y&quot; — out of scope for v1).</li><li>Runners poll <code>opengit:relay:ci</code> and the per-repo CI Autobase for jobs they qualify for.</li><li>Runner claims a job (<code>ci.job.claim { jobId, runnerKey, at }</code>).</li><li>Runner executes, streams logs as appended entries (<code>ci.log { jobId, line, at }</code>).</li><li>Runner posts result (<code>ci.job.result { jobId, status, exitCode, artifacts: [hyperdriveKey], signedBy }</code>).</li><li>The view denormalizes into a <code>jobs</code> Hyperbee for UI.</li></ol>
+<h3>8.3 Runner trust</h3>
+<p>Repo owner enumerates runner pubkeys they trust in <code>ns:meta.runners</code>. A runner result is only &quot;official&quot; if signed by a trusted runner. Any other runner can post results — they just won't influence merge gating.</p>
+<p>This is simpler than ZK but solves the core problem: <strong>untrusted runners can compete to be useful, but only signed-by-trusted-key results count for merge protection.</strong></p>
+<h3>8.4 Runner deployment</h3>
+<p>A runner is a Bare process. Self-hosted: run on your laptop, idle when not running jobs. Community runners: someone runs a fleet, repo owners list them as trusted. Paid runners: same protocol, accept jobs from repos that have prepaid (Lightning invoice in the claim message — out of scope for v1).</p>
+<hr>
+<h2>9. Releases, Packages, Pages</h2>
+<h3>9.1 Releases</h3>
+<p><code>ns:releases</code> is a Hyperdrive. Layout:</p>
+<pre><code>/v1.2.3/
+  manifest.json    { tag, commit, notes, signedBy, at }
+  artifacts/
+    opengit-darwin-arm64.tar.gz
+    opengit-linux-x64.tar.gz
+    SHA256SUMS
+    SHA256SUMS.sig</code></pre>
+<p>Anyone with the repo key can pull releases. Hyperdrive's content-addressing means the same artifact across versions deduplicates.</p>
+<h3>9.2 Packages</h3>
+<p>A package is just a release with a manifest the package manager understands. <code>pear://&lt;repo-key&gt;/v1.2.3</code> resolves directly to the Hyperdrive contents — Pear's existing app-distribution mechanism, repurposed.</p>
+<h3>9.3 Pages</h3>
+<p><code>ns:pages</code> is a Hyperdrive served via Pear's HTTP gateway: <code>pear://&lt;repo-key&gt;/pages/</code>. Builds run as CI jobs that write to the Pages drive.</p>
+<hr>
+<h2>10. Mirrors and Blind Relays (always-on availability)</h2>
+<p>Repos must remain reachable when the owner is offline. We split this into <strong>two distinct operator roles</strong>, with explicit trust differences. Conflating them is a security mistake; see <a href="/docs/decentralization-audit.html">DECENTRALIZATION-AUDIT.md §1</a>.</p>
+<h3>10.1 The two roles</h3>
+<table><thead><tr><th>Role</th><th>Sees plaintext?</th><th>Use for</th><th>Implementation</th></tr></thead><tbody><tr><td><strong>Mirror</strong> (<code>opengit-mirror</code>)</td><td>Yes — refs, commits, issues, files</td><td>Public repos</td><td>Implemented in v0.0.1</td></tr><tr><td><strong>Blind relay</strong> (<code>opengit-relay</code>)</td><td>No — ciphertext only</td><td>Private repos, censorship-resistance</td><td><strong>Not implemented</strong>. Depends on HiveRelay availability or hand-rolled blind replication. v0.0.3+.</td></tr></tbody></table>
+<p>A mirror operator is in the same legal/social position as a Mastodon admin: visible content, takedown target. A blind-relay operator holds bytes they cannot decrypt — closer to a Tor-like position.</p>
+<h3>10.2 Mirror (public-repo plaintext mirroring)</h3>
+<p>A mirror replicates a repo's Corestore in full and joins the swarm topic as a server. No special crypto; the repo's content is by definition public.</p>
+<p><code>ns:meta.mirrors</code> lists mirror pubkeys the owner has authorized to advertise this repo. <strong>No mirror is required by the protocol</strong> — discovery via direct swarm topic still works without any mirror, just with worse availability.</p>
+<p><strong>No single default mirror.</strong> Clients ship with <strong>N≥3 community-operated mirrors</strong> of jurisdictional diversity, randomly ordered in UI. Self-pinning (your own always-on machine) is encouraged as the obvious-correct choice. See DECENTRALIZATION-AUDIT.md §3.</p>
+<h3>10.3 Blind relay (encrypted private-repo replication)</h3>
+<p>For private repos, the repo's Corestore uses a per-repo content key (separate from the discovery key). All Hypercores in the Corestore are per-block encrypted under this content key. Authorized peers (collaborators) hold the content key, wrapped per-collaborator under their identity public keys.</p>
+<p>A blind relay:</p>
+<ul><li>Holds Hypercore blocks it cannot decrypt.</li><li>Joins a private-derived swarm topic (see §5.5) so DHT observers cannot enumerate private-repo existence by repo-key alone.</li><li>Serves availability with no plaintext exposure.</li></ul>
+<p><strong>Reference implementation: HiveRelay (<code>p2p-hiverelay-client</code>).</strong> The blind-relay path uses <a href="https://github.com/bigdestiny2/P2P-Hiverelay">HiveRelay</a>'s SDK directly: we pass our 32-byte content key as the relay's <code>encryptionKey</code>, the relay stores opaque encrypted Hypercore blocks across its operator network, peers with the content key connect via Hyperswarm and read normally. HiveRelay is Apache-2.0, runs natively in Bare/Pear, and does not require its operator network — operators can run a HiveRelay node on their own hardware (VPS, Umbrel, RPi) and clients can pubkey-pin them out-of-band.</p>
+<p>The integration shape, the items HiveRelay covers vs items Opengit must still build, and the v0.0.4 deliverables are documented in <a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</p>
+<p><strong>Author-signed mirror lists.</strong> v0.0.4+ replaces the soft <code>ns:meta.mirrors</code> list with HiveRelay-style author seeding manifests (Ed25519-signed lists of authorized relays). The signature is the authorization; tampering is detectable.</p>
+<p><strong>Pubkey-pinned relay trust (audit principle #6).</strong> Clients use the HiveRelay-style pattern of fetching <code>/.well-known/hiverelay.json</code> (signed by the relay's identity Ed25519 key) and pinning the operator's pubkey out-of-band. A reverse proxy or MITM that tampers with the doc is detected. Adopted as the canonical pattern for all Opengit relay discovery (mirrors, blind relays, indexers).</p>
+<p><strong>Unseed kill switch.</strong> A repo owner can sign an <code>unseed</code> request and broadcast it to all known relays. Relays verify the signature against the repo's owner pubkey and drop their copy. Required for DMCA/takedown UX without giving any relay operator unilateral content-removal authority over content they don't own.</p>
+<h3>10.4 Operator economics</h3>
+<p>Pure volunteer is sustainable for small fractions of the network but won't scale. Models the protocol does not preclude (none mandated for v1):</p>
+<ul><li><strong>Self-hosting</strong> — assumed default for project teams. Each project can run its own.</li><li><strong>Sponsorship</strong> — projects fund their own mirror/relay infrastructure.</li><li><strong>Federated paid pinning</strong> — operators charge per GB/month, paid via Lightning. Out of scope for v1, but the architecture does not preclude it.</li></ul>
+<h3>10.5 DHT bootstrap diversity</h3>
+<p>The DHT has bootstrap nodes — without them, a fresh peer cannot join. Hyperswarm ships with a default set; relying solely on these is a soft centralization (audit principle #3).</p>
+<p>The protocol mandates:</p>
+<ol><li><strong>Bootstrap is overridable.</strong> Every Opengit binary must accept an alternate bootstrap list via env var (<code>OPENGIT_BOOTSTRAP</code>) and config.</li><li><strong>No single canonical bootstrap.</strong> Documentation must list multiple operators, including instructions to run your own (<code>opengit-bootstrap</code> package, v0.0.3+).</li><li><strong>Bootstrap operators see join-time IPs.</strong> Operators must publish a privacy policy or be excluded from default lists.</li></ol>
+<hr>
+<h2>11. Security Model</h2>
+<h3>11.1 Trust assumptions</h3>
+<table><thead><tr><th>Component</th><th>Trust model</th></tr></thead><tbody><tr><td>Repo identity</td><td>Pubkey owner controls the repo. Compromise = compromise. No recovery (in v1).</td></tr><tr><td>Refs</td><td>Signed by writers. Verify signature against <code>ns:meta.writers</code> set.</td></tr><tr><td>Issue/PR comments</td><td>Signed by author identity feed. Spoofing detectable.</td></tr><tr><td>Pinning relay</td><td>Trusted for availability only. <strong>Not</strong> trusted for integrity (signatures verify) or confidentiality (use blind mode for private).</td></tr><tr><td>Indexer relay</td><td>Trusted for completeness/correctness of search results. Falsely omitting results is detectable only if you cross-check multiple indexers.</td></tr><tr><td>CI runner</td><td>Trusted for job result correctness if signed by a key the repo owner enumerated.</td></tr></tbody></table>
+<h3>11.2 Threat model</h3>
+<p><strong>In scope:</strong></p>
+<ul><li>Malicious peers serving altered git objects → defeated by git's content addressing + ref signatures.</li><li>Eavesdropping on private repos → defeated by Hypercore encryption + blind relays.</li><li>Spam in issues → moderator role; future reputation layer.</li><li>Stolen identity key → no recovery in v1; user must publish a <code>key.revoke</code> from a backup if they have one. <strong>Open problem.</strong></li><li>Sybil indexers polluting search → users curate their indexer list.</li><li>Censoring relays refusing to serve → repo lists multiple mirrors; users can switch.</li></ul>
+<p><strong>Out of scope (v1):</strong></p>
+<ul><li>DoS via DHT poisoning (well-studied; Hyperswarm has mitigations).</li><li>Targeted deanonymization (we don't claim anonymity).</li><li>Subverted runner reporting fake green CI (mitigated by trusted-runner allowlist; not by ZK).</li></ul>
+<h3>11.3 Private repos</h3>
+<p>Hypercore supports per-block encryption. A private repo's Corestore is encrypted with a content key shared out-of-band among collaborators (v0.0.2) or wrapped per collaborator and stored in <code>ns:meta-keys</code> (v0.0.3+). Blind relays see ciphertext only.</p>
+<p>Key rotation when a collaborator leaves: re-encrypt the working set under a new key, rotate the share. Painful but standard.</p>
+<h3>11.4 Storage profiles &amp; compartmentalization (v0.0.2)</h3>
+<p>A user's Opengit storage is partitioned into <strong>profiles</strong>. Default profile is <code>default</code>; users can have additional profiles like <code>work</code>, <code>personal</code>, <code>pseudonymous</code>. Each profile has its own:</p>
+<ul><li>Corestore root (separate cryptographic identities, separate replication state)</li><li>Petname file</li><li>Keyring of content keys</li><li>Cached repos</li></ul>
+<p>Layout under <code>$OPENGIT_HOME</code> (default: <code>~/.opengit</code>):</p>
+<pre><code>$OPENGIT_HOME/
+└── profiles/
+    ├── default/
+    │   ├── storage/         (Corestore root for this profile)
+    │   ├── keys/            (per-repo content keys for private repos)
+    │   ├── petnames.json
+    │   └── identity.key     (this profile's identity secret key, when present)
+    ├── work/
+    │   ├── ...
+    └── pseudonymous/
+        └── ...</code></pre>
+<p>Selection is via env var (<code>OPENGIT_PROFILE=work</code>) or CLI flag (<code>--profile work</code>). All Opengit binaries honor this. <strong>Profiles never share storage</strong> — a repo cloned in <code>work</code> is invisible from <code>personal</code>, by design. Cross-profile correlation requires reading multiple roots, which an attacker with disk access can do anyway, but routine on-disk casual inspection of one profile reveals nothing about another.</p>
+<p>Compatibility: v0.0.1 used <code>~/.opengit/storage</code> as a single root. v0.0.2 migrates this to <code>~/.opengit/profiles/default/storage</code> on first run. The migration is a directory move and is idempotent; if the new path exists, the old path is left untouched and a warning is logged.</p>
+<hr>
+<h2>12. UX Surfaces</h2>
+<h3>12.1 Pear app (forge UI)</h3>
+<p>Tabs:</p>
+<ul><li><strong>Home</strong> — followed users' activity, stars, your repos.</li><li><strong>Repos</strong> — list, browse files, view commits (read-only renderer; pushing is via git CLI).</li><li><strong>Issues / PRs</strong> — per-repo and cross-repo views.</li><li><strong>Discover</strong> — search via configured indexers.</li><li><strong>Profile</strong> — your identity feed, follows, stars.</li><li><strong>Settings</strong> — keys, relays, indexers, runners.</li></ul>
+<p>Built as a normal Pear app, ships P2P. Updates auto-distribute via Pear's mechanism.</p>
+<h3>12.2 CLI</h3>
+<p><code>opengit</code> companion CLI for power users:</p>
+<ul><li><code>opengit repo create &lt;name&gt;</code> → creates Corestore, prints <code>opengit://&lt;key&gt;</code>.</li><li><code>opengit repo info &lt;key&gt;</code> → prints meta.</li><li><code>opengit issue list &lt;key&gt;</code> / <code>open &lt;key&gt; &quot;&lt;title&gt;&quot;</code> / <code>close &lt;key&gt; &lt;id&gt;</code>.</li><li><code>opengit relay add &lt;relay-key&gt;</code> → authorizes a pinning relay for a repo.</li><li><code>opengit identity init</code> → generates identity key.</li></ul>
+<h3>12.3 Web gateway (optional)</h3>
+<p>A Pear app exposing an HTTP gateway can serve repos at <code>https://&lt;gateway&gt;/&lt;key&gt;</code> for users without the app — read-only. Helps onboarding. Not part of the protocol; just UX.</p>
+<h3>12.4 Pages drive (mobile / browser surface, v0.0.6)</h3>
+<blockquote><p>Full integration plan: <a href="/docs/pearbrowser-integration.html">PEARBROWSER-INTEGRATION.md</a>.</p></blockquote>
+<p>A repo's HEAD is rendered into a static-HTML site and <strong>published as a sibling Hyperdrive</strong> under the same Corestore (namespace <code>pages:&lt;repoKeyHex&gt;</code>). The Hyperdrive's key (independent of the repo key) becomes the canonical browse address: <code>hyper://&lt;pagesDriveKey&gt;/</code>. Anyone with PearBrowser, a hyper:// browser, or a HiveRelay HTTP gateway can browse the repo as a forge-style web view with no Opengit-specific code on the browser side.</p>
+<p><strong>Why a Hyperdrive instead of an HTTP gateway?</strong> PearBrowser already has a hybrid HTTP-relay-first / P2P-fallback fetcher for <code>hyper://</code> content. Reusing it means zero new browser code, zero new operator code on HiveRelay, and the same persistence story as v0.0.4 (relay seeds the drive — repo stays browseable when owner is offline).</p>
+<p><strong>Output paths emitted by the renderer</strong> (frozen for v1):</p>
+<pre><code>/index.html                               repo overview (README, branches, recent commits)
+/refs/index.html                          branches + tags listing
+/commits/&lt;branch&gt;/index.html              recent commits on a branch
+/commit/&lt;oid&gt;.html                        commit metadata + diff
+/tree/&lt;branch&gt;/[&lt;dir&gt;/]index.html         directory listing
+/blob/&lt;branch&gt;/&lt;path&gt;                     raw file bytes
+/blob/&lt;branch&gt;/&lt;path&gt;.html                rendered (text) or &quot;Binary file&quot; preview
+/issues/index.html                        issue list (if repo has issues)
+/issues/&lt;issueId&gt;.html                    issue detail + thread
+/manifest.json                            PearBrowser-app-compatible manifest</code></pre>
+<p>Every rendered page includes <code>&lt;link rel=&quot;alternate&quot; type=&quot;application/opengit&quot; href=&quot;opengit://&lt;repoKeyZ32&gt;&quot;&gt;</code> so the canonical source-of-truth address is rediscoverable from the browse view.</p>
+<p><strong>Visibility constraint.</strong> Public repos render plaintext to the pages drive. Private repos refuse to publish in v0.0.6 — the encrypted-pages-drive flow (publish ciphertext, blind-mirror via <code>opengit-relay</code>) lands in v0.0.7.</p>
+<p><strong>Rendering primitive.</strong> The renderer drives off the existing <code>ShadowRepo</code> (the same on-disk bare git introduced in v0.0.3 for the pack-bridge), using <code>git ls-tree</code>/<code>git show</code> for object introspection. We don't reimplement git's object decoder.</p>
+<p><strong>Refresh model (v0.0.6 baseline).</strong> Manual: <code>opengit pages publish &lt;repo&gt;</code> re-renders and writes to the pages drive. Idempotent; only changed paths produce new Hyperdrive entries. v0.0.7 adds <code>opengit pages watch &lt;repo&gt;</code> for auto-republish on ref updates (Hypercore append events on <code>ns:refs</code>).</p>
+<p><strong>API:</strong></p>
+<ul><li><code>OpengitForge.publishToPagesDrive(repo, opts)</code> — publishes; returns <code>{ driveKey, driveKeyHex, hyperUrl, written }</code>.</li><li><code>pages.render({ repo, profileName, shadowRoot, options })</code> — pure async-iterable of <code>{path, bytes}</code>; lets callers ship their own publisher (e.g. dump to a directory for static hosting).</li></ul>
+<hr>
+<h2>13. Specifications Hierarchy</h2>
+<table><thead><tr><th>Spec</th><th>Stability</th><th>Depends on</th></tr></thead><tbody><tr><td>Corestore namespace layout (§3)</td><td>Frozen for v1</td><td>Hypercore, Hyperbee, Hyperblobs</td></tr><tr><td>Refs schema (§3.2)</td><td>Frozen for v1</td><td>Hyperbee, ed25519 sigs</td></tr><tr><td>Objects schema (§3.3)</td><td>Frozen for v1</td><td>Hyperblobs, git pack format</td></tr><tr><td>Encryption &amp; content keys (§3.7)</td><td>Frozen for v1 (storage of keys subject to v0.0.3 wrapped-key revision)</td><td>Hypercore encryption</td></tr><tr><td>Petname file format (§4.3)</td><td>Frozen for v1</td><td>Local fs</td></tr><tr><td>RPC protocol (§5.2)</td><td>Frozen for v1</td><td>Protomux, cenc</td></tr><tr><td>Canonical encoding (§5.4)</td><td>Frozen for v1</td><td>z32</td></tr><tr><td>Private-topic derivation (§5.5)</td><td>Frozen for v1</td><td>sodium / blake2b</td></tr><tr><td>Identity feed events (§4.1)</td><td>Frozen for v1</td><td>Hypercore</td></tr><tr><td>Issue Autobase events (§6.1)</td><td>Frozen for v1</td><td>Autobase</td></tr><tr><td>PR Autobase events (§6.2)</td><td><strong>Subject to revision</strong></td><td>Autobase</td></tr><tr><td>Storage profiles (§11.4)</td><td>Frozen for v1</td><td>Local fs</td></tr><tr><td>Repo-key → namespace index</td><td>Frozen for v1</td><td>Local fs</td></tr><tr><td>CI workflow &amp; job model (§8)</td><td><strong>Subject to revision</strong></td><td>Autobase, Hyperdrive</td></tr><tr><td>Naming / Slashtags integration (§4.2)</td><td><strong>Subject to revision</strong></td><td>Slashtags</td></tr><tr><td>Indexer query API (§7.1)</td><td><strong>Subject to revision</strong></td><td>Hyperbee, Protomux</td></tr><tr><td>Wrapped-key collaborator sharing (§3.7.2 successor)</td><td><strong>v0.0.3 target</strong></td><td>Hypercore encryption + identity-key wrapping</td></tr></tbody></table>
+<hr>
+<h2>14. MVP Scope (v0.1)</h2>
+<p>The smallest thing that demonstrates the thesis works:</p>
+<ol><li><strong><code>opengit-core</code></strong> Bare lib: Corestore-backed <code>OpengitRepo</code> with refs Hyperbee + objects Hyperblobs. Single-writer.</li><li><strong><code>git-remote-opengit</code></strong>: clone, fetch, push. Stock git compatibility.</li><li><strong><code>opengit-relay</code></strong>: HiveRelay-based pinning relay, single binary.</li><li><strong>Demo flow</strong>: User A creates repo on laptop, authorizes a relay, pushes initial commits, closes laptop. User B clones from the relay, pushes a branch (after A authorizes them), reopens laptop, pulls B's branch.</li></ol>
+<p>Out of MVP: identity feeds, issues, PRs, indexers, CI, Pages, releases, Pear UI. Those are v0.2–v1.0.</p>
+<hr>
+<h2>15. Open Questions</h2>
+<ol><li><strong>Identity key recovery.</strong> Lose your key, lose your identity. Threshold schemes? Social recovery? Punted to v2.</li><li><strong>Spam in issues at scale.</strong> Moderation works for active repos; abandoned repos become spam dumps. Auto-archive heuristic? Reputation layer?</li><li><strong>Indexer freshness.</strong> How current is &quot;current&quot;? Define an SLA or accept the inconsistency.</li><li><strong>GC across forks.</strong> A fork can hold OIDs the upstream has GC'd. We probably want to leave them alone; document it.</li><li><strong>Squashed merges and the Autobase view.</strong> A <code>pr.merge</code> with squash strategy creates an OID that doesn't exist in the fork. The PR view needs to handle that gracefully.</li><li><strong>Push-based notification fan-out.</strong> Hyperswarm topic subscription is pull-shaped. Notifications need a long-lived subscription or a webhook-bridge relay. TBD.</li><li><strong>Compliance / DMCA.</strong> Relay operators get the takedown notices. We document the model honestly: relays choose what they pin, like Mastodon admins choose what they federate.</li></ol>
+<hr>
+<h2>16. Glossary</h2>
+<ul><li><strong>Repo key</strong> — Public key of a repo's Corestore. Canonical identifier.</li><li><strong>Discovery key</strong> — Hash of the repo public key. The advertised handle on the DHT for public repos. Always public.</li><li><strong>Content key</strong> — Per-repo 32-byte symmetric key used for Hypercore per-block encryption on private repos. Independent of the discovery key. Held by collaborators only.</li><li><strong>Identity key</strong> — Public key of a user's identity feed. Canonical identifier for a user.</li><li><strong>Writer</strong> — A pubkey listed in <code>ns:meta.writers</code>, authorized to update refs.</li><li><strong>Owner</strong> — A pubkey listed in <code>ns:meta.owners</code>, authorized to change writers/owners/moderators.</li><li><strong>Mirror</strong> — A peer that replicates a public repo's Corestore in plaintext for availability.</li><li><strong>Blind relay</strong> — A peer that replicates a private repo's Corestore in ciphertext (does not hold the content key).</li><li><strong>Indexer relay</strong> — A peer that ingests repos and serves search.</li><li><strong>Runner</strong> — A peer that executes CI jobs.</li><li><strong>Petname</strong> — A local-only short name mapping (<code>alice</code> → pubkey, <code>myproject</code> → repo key) stored in a per-profile JSON file.</li><li><strong>Profile</strong> — A storage compartment under <code>$OPENGIT_HOME/profiles/&lt;name&gt;/</code> with its own corestore root, keyring, petnames, and identity. Profiles do not share state.</li><li><strong>Slashtag</strong> — A <code>slash://&lt;key&gt;</code> URL with optional drive-served metadata, used for human-readable identity.</li></ul>
+<hr>
+<h2>17. Version deltas</h2>
+<h3>v0.0.11 (this revision) — A1: the manifest-core redesign</h3>
+<p>The single 🔴 architectural gap, deferred since v0.0.8 and flagged as top-priority in STATE-OF-OPENGIT-v0.0.10.md, is <strong>closed</strong>.</p>
+<p>Changed — repo data model (SPEC §3.1):</p>
+<ul><li>New <strong><code>ns:manifest</code></strong> core: a Hyperbee, <strong>always plaintext</strong>, holding <code>spec</code>, <code>visibility</code>, and a <code>cores</code> record (hex public keys of refs/objects/objectIndex/meta/metaKeys). It is now the <strong>canonical repo address</strong> — <code>repo.key</code> / <code>keyHex</code> / <code>keyZ32</code> / <code>discoveryKey</code> resolve to the manifest core (was: refs core). <code>repo.writable</code> still tracks the refs core.</li><li><code>OpengitRepo.init()</code> writes the manifest record after the other cores' keys are known; keeps writing the legacy <code>__cores__</code>-in-refs entry for pre-v0.0.11 public-repo readers.</li><li><code>Forge.openRepo()</code> rewritten: open the (plaintext) manifest core by key, read <code>cores</code>, bind the rest (encryptionKey on the encrypted ones; meta-keys always plaintext). Safe legacy fallback: only alias the opened core as the refs core if a <code>__cores__</code> entry actually reads back — otherwise leave cores unbound and let <code>repo.refresh()</code> rebind once the manifest replicates (prevents the manifest's own entries leaking as bogus refs).</li><li><code>Forge.createRepo()</code> private-repo keyring probe now keys off the manifest core (canonical key) so keyring entries match <code>repo.keyHex</code>.</li><li>New <code>OpengitRepo.setContentKey()</code> — installs a content key acquired <em>after</em> open (the cold-bootstrap path); the next <code>refresh()</code> rebinds + decrypts the encrypted cores.</li><li><code>repo.refresh()</code> re-reads the <strong>manifest</strong> (was: <code>__cores__</code> in refs), with a legacy <code>__cores__</code> fallback.</li></ul>
+<p>Changed — topic derivation (SPEC §5.5):</p>
+<ul><li><strong>All repos</strong> (public + private) now join the manifest-key-derived public topic. The content-key-derived private topic broke cold-bootstrap (chicken-and-egg: need the content key to compute the topic to replicate the data that delivers the content key). Documented honestly as a deferred optional v0.1+ second-topic hardening; <code>privateRepoTopic()</code> kept exported.</li></ul>
+<p>Fixed (surfaced by the redesign):</p>
+<ul><li>Indexer no longer crashes with <code>DECODING_ERROR</code> on a private repo. It now hard-gates on the <strong>plaintext manifest's</strong> <code>visibility</code> <em>before</em> ever touching the (maybe-encrypted) meta core — a clean check the manifest model enables. Belt-and-suspenders try/catch around <code>getMeta()</code> too.</li></ul>
+<p>Tests:</p>
+<ul><li><strong>Un-skipped and rewrote</strong> the private-repo cold-bootstrap swarm test (skipped since v0.0.8 as &quot;requires v0.0.9 manifest-core redesign&quot;). It now proves the full chain end-to-end over the local-DHT SwarmFixture: Bob, with only his identity + the repo key (no out-of-band content key), opens → refresh → reads manifest <code>cores</code> → reads plaintext meta-keys → unwraps his wrapped invite → <code>setContentKey</code> → refresh → <strong>decrypts and reads the actual ref Alice set.</strong> ✅</li><li>Updated test 27 (public refs replication) to follow the documented remote <code>refresh()</code> contract.</li><li><strong>120 tests, 117 passing, 0 failing, 3 skipped</strong> (down from 4 — the manifest-core skip is gone; remaining 3 are the v0.0.11 multi-node-DHT live blind-peer round-trip + 2 superseded indexer unit tests). 321 deps, all approved licenses.</li></ul>
+<h3>v0.0.10</h3>
+<p>Phase: blind-peer <strong>server</strong> side + live integration scaffolding.</p>
+<p>Added — phase 10a (opengit-mirror <code>--blind-peer</code>):</p>
+<ul><li><code>blind-peer@^3.7.0</code> (Apache-2.0) added as an <strong>optional</strong> dependency of <code>opengit-mirror</code> (RocksDB-backed, ~24 transitive deps — hence optional, mirrors the <code>opengit-relay --use-hiverelay</code> pattern).</li><li>New <code>packages/opengit-mirror/lib/blind-peer-server.js</code> — <code>OpengitBlindPeerServer</code> wraps Holepunch's <code>blind-peer</code> server. <code>new BlindPeer(storagePath, { bootstrap, maxBytes, trustedPubKeys, port })</code>; self-manages RocksDB + Corestore + Hyperswarm. Exposes <code>.publicKeyHex</code> (the contact key publishers point <code>forge.setBlindPeerMirrors([...])</code> at).</li><li><code>opengit-mirror --blind-peer</code> runs a real content-agnostic blind-peer server instead of per-repo hand-rolled replication. New flags: <code>--max-storage-mb</code>, <code>--port</code>. The default (no <code>--blind-peer</code>) path is unchanged — zero extra deps.</li><li>Architectural point reinforced: a blind-peer is <strong>content-agnostic</strong>. It pins whatever cores publishers ask, by key. Opengit-specific repo knowledge stays client-side (<code>opengit-core/lib/blind.js</code>, v0.0.9); the pinning infra is generic Holepunch. This is the clean separation the IMPROVEMENT-RESEARCH.md top-1 recommendation called for.</li></ul>
+<p>Added — phase 10b (live integration scaffolding):</p>
+<ul><li><code>packages/opengit-core/test/integration/blind-peering.test.js</code> — verifies the blind-peer server constructs + <code>ready()</code>s against the SwarmFixture local-DHT bootstrap and exposes a 32-byte contact pubkey; verifies <code>requestBlindPin()</code> dispatches correctly through the repo / autobase / unrecognized paths in background mode.</li><li><strong>Honest scope note:</strong> the fully-live client→server round-trip (requestBlindPin actually reaching a running blind-peer over the swarm) is <strong>skipped with rationale</strong>. A single-node local DHT bootstrap does not reliably holepunch a <code>blind-peer-muxer</code> connection in-process — <code>BlindPeer.ready()</code> succeeds but the client's DHT-connect to the server keypair stalls without a multi-node DHT. This is a test-harness limitation, not an Opengit bug (verified: server comes up clean; only the synthetic-DHT connect path stalls). Tracked for v0.0.11 behind a two-bootstrap fixture, the way Holepunch's own blind-peer tests run against a small cluster.</li></ul>
+<p>Test suite: <strong>120 tests, 116 passing, 0 failures, 4 deliberately skipped</strong> (manifest-core redesign, 2 superseded indexer tests, the v0.0.11 live blind-peer round-trip). 318 deps, all approved licenses.</p>
+<h3>v0.0.9</h3>
+<p>Phase: Holepunch-native consolidation. Adopt the official primitives we were hand-rolling. <strong>Apache-2.0 throughout, including all new dependencies.</strong></p>
+<p>Added — phase 9a (blind-peering):</p>
+<ul><li><code>blind-peering@^2.1.1</code> (Apache-2.0) added as opengit-core dep — Holepunch's official client for asking blind-peer servers to keep cores/autobases available.</li><li>New module <code>packages/opengit-core/lib/blind.js</code> — lazy-loads <code>blind-peering</code>; thin factory.</li><li><code>OpengitForge</code> constructor accepts <code>blindPeerMirrors</code>. New methods: <code>setBlindPeerMirrors()</code>, <code>getBlindPeering()</code> (memoized client), <code>requestBlindPin(target, opts)</code> (autobase / hyperdrive / hypercore / OpengitRepo).</li><li>Operators run <code>blind-peer-cli</code> (separate package, install separately) to host the server side. We don't bundle it; that's an architectural choice — opengit-core stays lightweight and operator tooling can update independently.</li><li>Tests cover surface: client construction, mirror config, target-shape validation, close-tears-down. Live swarm RPC tests deferred to v0.0.10 swarm-fixture work.</li></ul>
+<p>Added — phase 9b (keet-identity-key):</p>
+<ul><li><code>keet-identity-key@^3.1.0</code> (Apache-2.0) added as opengit-core dep.</li><li><code>OpengitIdentity</code> rewritten to wrap keet-identity-key while preserving the v0.0.4–v0.0.8 ed25519 sign/verify surface.</li><li>Three construction paths: legacy <code>new OpengitIdentity()</code> (raw keypair), <code>OpengitIdentity.fromSecret(sk)</code>, and <strong>new <code>OpengitIdentity.fromMnemonic(mnemonic, { deviceSecretKey? })</code></strong> + the convenience <code>OpengitIdentity.generate()</code> (mnemonic+device in one call).</li><li>Hierarchical identities carry <code>mnemonic</code>, <code>identityPublicKey</code> (the stable root), and <code>deviceProof</code> (attestation chain device→identity). v0.1+ verifiers can chain-verify the proof at apply time; v0.0.9 just plumbs the data.</li><li><code>IdentityStore</code> reads both <strong>v1</strong> (legacy) and <strong>v2</strong> (hierarchical) file formats. New: <code>loadOrCreateHierarchical()</code> async variant; legacy <code>loadOrCreate()</code> stays sync.</li><li>New CLI: <code>opengit identity init</code> defaults to mnemonic-rooted (24-word phrase printed); <code>--no-mnemonic</code> for legacy. <strong><code>opengit identity recover -- &lt;24 words&gt;</code></strong> rebuilds an identity from the phrase. <code>opengit identity show</code> reports hierarchical/legacy status.</li><li>Tests: 8 new tests cover mnemonic generation, fromMnemonic, generate, recovery (same-mnemonic-same-device), sign/verify on hierarchical identities, IdentityStore v2 round-trip, IdentityStore v1 backward compat, and a smoke test that signed-by-hierarchical artifacts verify the same as legacy ones.</li></ul>
+<p>Added — phase 9c (Pear-app shell):</p>
+<ul><li>New <code>pear/</code> directory at repo root: <code>package.json</code> with <code>pear: { name: 'opengit', type: 'terminal' }</code>, <code>index.js</code> shell, <code>README.md</code> documenting <code>pear stage</code> / <code>pear release</code>.</li><li>v0.0.9 ships a SHELL — running it prints the banner + points users at the npm CLI. Real Bare port of opengit-cli is v0.1+ work.</li><li>The point is to establish the <code>pear://opengit/&lt;key&gt;</code> distribution channel today so the v0.1+ native port can land cleanly into a known address.</li></ul>
+<p>Honest acknowledgement:</p>
+<ul><li>Phase 9a leaves <code>opengit-mirror</code> and <code>opengit-relay</code> (Apache-2.0 path) untouched — both are still hand-rolled swarm-server replication. Migrating them to be <code>blind-peer</code>-server-backed (the operator daemon side, not the client side) is a v0.0.10 task; today we shipped only the <strong>client</strong> integration. Operators who want the official Holepunch path run <code>blind-peer-cli</code> directly.</li><li>Phase 9b is a &quot;thin wrap&quot; — sign/verify still uses ed25519 directly with the device key. v0.1+ chain-verifies the proof at apply time so a compromised device can be revoked. The cryptographic plumbing is in place; the verification semantics aren't tightened yet.</li></ul>
+<p>Test suite: <strong>115 tests, 112 passing, 0 failures, 3 deliberately skipped.</strong> All v0.0.7 → v0.0.9 features green; the 3 skips remain the v0.0.9 manifest-core protocol redesign + 2 superseded indexer tests.</p>
+<p>License: 299 packages, all approved (no AGPL surface in default builds; AGPL only via <code>opengit-relay --use-hiverelay</code>).</p>
+<h3>v0.0.8</h3>
+<p>Phase: swarm-integration test harness, cores-discovery for remotes, PRs as Autobase, landing page + docs site, dogfood validation.</p>
+<p>Added — phase 8a (swarm-integration harness):</p>
+<ul><li><code>test-helpers/swarm-fixture.js</code> — boots a local <code>HyperDHT.bootstrapper</code> on 127.0.0.1 so tests can spin up two-or-more forges in one process and bridge them without the public DHT. <code>SwarmFixture.create()</code> + <code>fix.forge(label)</code> + <code>fix.teardown()</code>.</li><li><code>packages/opengit-core/test/integration/swarm.test.js</code> — verifies alice→bob ref replication over the local DHT (passes). The blind-relay-from-cold-start test is documented and skipped pending a v0.0.9 protocol redesign.</li><li><code>packages/opengit-indexer/test/integration/ingest.test.js</code> — replaces v0.0.7's two skipped indexer tests with real swarm-bridged ingest verification (passes).</li><li><code>npm test</code> script now picks up <code>packages/*/test/integration/*.test.js</code> and uses <code>--test-timeout=45000</code>.</li></ul>
+<p>Added — cores-discovery for remotes (SPEC §3 addendum):</p>
+<ul><li><code>OpengitRepo.init()</code> writes a <code>__cores__</code> entry to the refs Hyperbee containing the public keys of all sibling cores (meta, meta-keys, objects, object-index). Filtered out of <code>listRefs()</code>.</li><li><code>Forge.openRepo(&lt;key&gt;)</code> now reads <code>__cores__</code> (when accessible) to bind the right keys to the other cores instead of namespace-deriving wrong ones.</li><li><code>OpengitRepo.refresh()</code> — public method to re-discover cores after swarm replication. Used by <code>OpengitIndexer._track()</code> and integration tests.</li><li><code>OpengitRepo.ready()</code> no longer overwrites pre-bound cores. Fixed the v0.0.7 bug where remote-by-key opened repos with namespace-derived keys.</li></ul>
+<p>Added — phase 8b (PRs as Autobase, SPEC §6.2):</p>
+<ul><li>New module <code>packages/opengit-core/lib/prs.js</code> with same Autobase shape as issues. Inputs: <code>pr.open</code>, <code>pr.comment</code>, <code>pr.review</code>, <code>pr.update</code>, <code>pr.merge</code>, <code>pr.close</code>, <code>pr.reopen</code>. Apply rules: anyone-signed for open/comment/review; only contributor (<code>openedBy</code>) can <code>update</code>; only moderators can <code>merge</code>; close/reopen by author or moderator.</li><li>View shape: <code>prs</code> Hyperbee + <code>threads</code> Hyperbee. Same <code>__cores__</code> discovery applies.</li><li>Repo methods: <code>openPR / commentPR / reviewPR / updatePR / mergePR / closePR / reopenPR / listPRs / getPR / listPREvents</code>.</li><li>New CLI: <code>opengit pr &lt;list|open|comment|review|merge|close|reopen|update|show&gt;</code>.</li><li>Tests: 7 unit tests covering open/comment/review/merge round-trip, state filter, identity-required, non-author update rejection.</li></ul>
+<p>Added — phase 8c (live dogfood):</p>
+<ul><li>Verified end-to-end: <code>opengit identity init</code>, <code>opengit init &lt;name&gt;</code>, <code>opengit info &lt;key&gt;</code>, <code>opengit set-ref</code>, <code>opengit petname add</code>, <code>opengit issue open/list</code>. All work on a fresh <code>~/.opengit/profiles/dogfood-v008/</code> profile.</li><li>Bug found and fixed: <code>opengit init &lt;name&gt;</code> now auto-adds a repo petname matching the local name, so downstream commands accept the name without a separate <code>petname add</code> step.</li></ul>
+<p>Added — landing page + docs site:</p>
+<ul><li><code>site/index.html</code> — landing page (dark-first, zero JS, zero external resources).</li><li><code>site/assets/style.css</code> — design system. CSS-only dark/light via <code>prefers-color-scheme</code>.</li><li><code>scripts/build-site.js</code> — tiny dependency-free Markdown→HTML renderer that wraps each top-level <code>.md</code> in the site chrome. Generates <code>site/docs/*.html</code> for SPEC, README, FEASIBILITY, audit, deep-audit, HiveRelay, PearBrowser, Licensing.</li><li><code>site/docs/quickstart.html</code> — synthesized 5-minute walkthrough.</li><li><code>.claude/launch.json</code> — preview server (<code>npx http-server site -p 5174</code>) so the site can be loaded in browser via Claude_Preview MCP.</li></ul>
+<p>Test suite: <strong>100 tests, 97 passing, 0 failures, 3 skipped</strong> (1 swarm-blind-bootstrap pending v0.0.9; 2 superseded indexer tests).</p>
+<h3>v0.0.7</h3>
+<p>Phase: pages-watch + encrypted pages drive + native blind relay (Apache-2.0 default) + indexer relay scaffold + deep audit.</p>
+<p>Added — phase 7a (pages):</p>
+<ul><li><code>OpengitForge.watchPages(repo, opts)</code> — debounced re-publish on ref-core append events; stoppable. Initial publish on watch start.</li><li><code>publishToPagesDrive(repo, { encrypted: true })</code> — encrypts the pages Hyperdrive with the repo's content key; collaborators with the key see plaintext, blind relays hold ciphertext only.</li><li>CLI: <code>opengit pages watch &lt;repo&gt; [--encrypted] [--debounce-ms N]</code>.</li><li><code>publishToPagesDrive</code> always closes its Hyperdrive in <code>finally</code> — fixed a session-leak that broke <code>forge.close()</code> across repeated publishes.</li></ul>
+<p>Added — phase 7b (relay refactor):</p>
+<ul><li><code>OpengitRelay</code> rewritten: default path is native Hyperswarm Corestore replication. <strong>No HiveRelay dependency required.</strong></li><li>HiveRelay-network seeding becomes opt-in via <code>--use-hiverelay</code> / <code>useHiveRelay: true</code>. Pulls AGPL-3.0 deps only when enabled. Clear error if not installed.</li><li><code>describeSeeds()</code> reports per-repo &quot;blind&quot; (operator has no content key) vs &quot;self-relay&quot; (operator IS a collaborator) mode.</li><li><code>OpengitRelay.fromKeyring()</code> factory — pulls content keys from operator profile keyring; operator manages who they relay for via the keyring, not via flags.</li><li><strong>License: opengit-relay is now Apache-2.0 by default</strong> (was AGPL-3.0 in v0.0.4–v0.0.6). AGPL-3.0-or-later only when <code>--use-hiverelay</code> is enabled. Documented in <a href="/docs/licensing.html">LICENSING.md</a>.</li></ul>
+<p>Added — phase 7c (indexer):</p>
+<ul><li>New package <code>packages/opengit-indexer/</code> — opt-in indexer relay.</li><li>Allowlist-only ingestion (no firehose). Hyperbee-backed index over <code>meta:</code>, <code>token:</code> (inverted), <code>topic:</code> (per-topic membership) keyspaces.</li><li>Refuses to index private repos (visibility check at ingest time).</li><li>Protomux RPC channel <code>opengit/v1:indexer</code> over Hyperswarm topic <code>opengit/v1:index</code> for client queries (<code>search.repos</code>, <code>list.repos</code>, <code>capabilities</code>).</li><li>Client-side <code>lib/query.js</code> — <code>fanOutQuery(forge, request)</code> queries N indexers in parallel, unions+ranks results, attaches <code>seenOnIndexers</code> provenance per result.</li><li>New CLI binary: <code>opengit-indexer --repo &lt;key&gt; ...</code>.</li><li>Tokenizer is conservative (≥3-char ASCII alphanumeric, dedup); designed to be predictable and queryable from many indexers in parallel.</li></ul>
+<p>Fixed:</p>
+<ul><li><code>OpengitRepo.ready()</code> was blindly overwriting <code>_refsCore</code> even when <code>openRepo(&lt;key&gt;)</code> had pre-bound it to an explicit-key core. The remote-by-key open path produced repos with the namespace-derived key (wrong) instead of the requested key. Now <code>ready()</code> only initializes cores it hasn't been handed.</li><li><code>OpengitIndexer.stop()</code> now removes its connection-handler from the swarm before destroying it, so the indexer doesn't keep a reference to itself after close.</li><li><code>npm test</code> script now sets <code>--test-timeout=30000</code> so swarm-bridging hangs surface as failures rather than wedging the runner.</li></ul>
+<p>Documented:</p>
+<ul><li><a href="/docs/deep-audit.html">DEEP-AUDIT-v0.0.7.md</a> — comprehensive review of code surface, decentralization scorecard, threat-model gaps, test coverage assessment, license posture, spec-vs-code drift, and prioritized next moves.</li><li>LICENSING.md updated — per-package matrix, opengit-relay relicensed Apache-2.0, AGPL only with <code>--use-hiverelay</code>.</li></ul>
+<p>Test suite: <strong>87 passing across 3 consecutive runs.</strong> 2 tests deliberately skipped pending v0.0.8's swarm-integration test harness (DEEP-AUDIT §8 gap #1).</p>
+<h3>v0.0.6</h3>
+<p>Phase: pages drive — render repo HEAD into a static-HTML Hyperdrive browseable from PearBrowser via <code>hyper://&lt;pagesDriveKey&gt;/</code>. Closes the &quot;browse Opengit repos in PearBrowser&quot; loop with zero browser-side code change.</p>
+<p>Added:</p>
+<ul><li>New package <code>packages/opengit-pages/</code> — pure-function renderer (<code>render(args) → AsyncIterable&lt;{path, bytes}&gt;</code>) plus dependency-free string templates (no client-side JS, no external CSS, fully offline). Drives off <code>ShadowRepo</code> so we reuse the v0.0.3 git introspection rather than reimplementing object decoding.</li><li>Output path schema frozen for v1: <code>/index.html</code>, <code>/refs/</code>, <code>/commits/&lt;branch&gt;/</code>, <code>/commit/&lt;oid&gt;.html</code>, <code>/tree/&lt;branch&gt;/[&lt;dir&gt;/]</code>, <code>/blob/&lt;branch&gt;/&lt;path&gt;</code> (raw + <code>.html</code>), <code>/issues/</code>, <code>/manifest.json</code>.</li><li>Every rendered page includes <code>&lt;link rel=&quot;alternate&quot; type=&quot;application/opengit&quot; href=&quot;opengit://&lt;repoKeyZ32&gt;&quot;&gt;</code> so the canonical source-of-truth is rediscoverable from any browse view.</li><li><code>OpengitForge.publishToPagesDrive(repo, opts)</code> — publishes a stable per-repo Hyperdrive under <code>pages:&lt;repoKeyHex&gt;</code> namespace. Re-publish is idempotent.</li><li><code>manifest.json</code> is shaped to be compatible with PearBrowser's app catalog so a pages drive can also be discovered as a &quot;Pear app&quot; if the user opts in.</li><li>New CLI: <code>opengit pages publish &lt;repo&gt;</code>, <code>opengit pages url &lt;repo&gt;</code>.</li><li>New <code>hyperdrive</code> dep at <code>opengit-core</code> level (was already a transitive of HiveRelay).</li></ul>
+<p>Decisions documented:</p>
+<ul><li><strong>PEARBROWSER-INTEGRATION.md</strong> — three integration shapes analyzed (HTTPS gateway on relay / pages-drive / native <code>opengit://</code> handler in PearBrowser); ship the pages-drive shape because it requires zero code change on either neighbor (PearBrowser, HiveRelay).</li><li>Private repos refuse to publish in v0.0.6 — the encrypted-pages-drive flow lands v0.0.7 alongside <code>opengit-relay</code> source-of-bytes adapter.</li></ul>
+<p>Test infrastructure:</p>
+<ul><li>New <code>test/setup.js</code> imported via <code>--import</code> flag — redirects <code>$OPENGIT_HOME</code> to a per-process tmpdir so parallel tests never touch the developer's real <code>~/.opengit/</code>.</li><li>Fixed <code>RepoIndex._save</code> to use a per-process unique <code>.tmp</code> filename (PID + timestamp + random suffix). Resolved a parallel-test race where concurrent saves on the same <code>.tmp</code> produced ENOENT-on-rename + corrupted JSON.</li></ul>
+<p>Test suite: <strong>75/75 passing</strong> (was 70). Five new tests in <code>packages/opengit-pages/test/render.test.js</code> cover render output paths, manifest shape, escape handling, issue rendering, and the empty-repo case.</p>
+<h3>v0.0.5</h3>
+<p>Phase: issue threads, Holepunch-stack v7 upgrade, persistent repo-index, license honesty.</p>
+<p>Added — phase 5a (issues):</p>
+<ul><li><code>Issues</code> module (Autobase-backed thread system) at <code>ns:issues-inputs</code>, view exposing <code>issues</code> + <code>threads</code> Hyperbees (§6.1). Anyone signed can open or comment; close/reopen restricted to issue author or moderators; label/assign restricted to moderators.</li><li>Lazy-opened on first access; repos that don't use issues skip the cost.</li><li>New <code>OpengitRepo</code> methods: <code>openIssue</code>, <code>commentIssue</code>, <code>closeIssue</code>, <code>reopenIssue</code>, <code>labelIssue</code>, <code>listIssues</code>, <code>getIssue</code>, <code>listIssueComments</code>.</li><li>New CLI: <code>opengit issue &lt;list|open|comment|close|reopen|show&gt;</code>.</li></ul>
+<p>Changed — Holepunch-stack v7 upgrade:</p>
+<ul><li><code>corestore@7.9.2</code>, <code>hypercore@11.29.0</code>, <code>autobase@7.27.3</code>, <code>hyperbee@2.27.3</code>, <code>hyperblobs@2.11.1</code>, <code>hyperswarm@4.17.0</code>, <code>hyperdht@6.31.0</code>. Required for autobase v7's apply/open API; resolved a <code>preload is not a function</code> corestore-v6/autobase-v7 mismatch.</li><li>Multi-writer apply functions (<code>multi-refs.js</code>, <code>issues.js</code>) rewritten against the v7 API: <code>open(store)</code> returns the view object directly; sub-bees created via <code>store.get('name')</code> once and exposed on the view, not lazily inside apply.</li></ul>
+<p>Added — persistent local-repo index:</p>
+<ul><li><code>RepoIndex</code> (<code>$OPENGIT_HOME/profiles/&lt;p&gt;/repos.json</code>) — maps <code>repoKeyHex → { localName, role, createdAt }</code>. <code>Forge.createRepo</code> records writable; <code>Forge.openRepo(key)</code> consults before deciding namespace, so reopen-by-key on a freshly-opened forge correctly returns the writable cores under the original <code>repo:&lt;localname&gt;</code> namespace instead of opening an empty <code>remote:&lt;keyhex&gt;</code> shadow.</li><li><code>OpengitForge</code> defaults <code>profileName</code> to <code>'default'</code> when caller doesn't specify, so the index is always available.</li></ul>
+<p>Fixed:</p>
+<ul><li><code>ShadowRepo._readRefs</code> was passing an async callback to a sync ref-tree walker; awaits were silently dropped, causing pushed refs to occasionally not persist to Corestore. Now collects leaves first, applies async writes in order.</li><li><code>OpengitForge.close()</code> was double-closing (<code>repo.close()</code> → namespace close → race against <code>rootStore.close()</code>). Now flushes via the rootStore only.</li><li><code>OpengitForge.createRepo</code> for private repos now consults the keyring before generating a fresh content key, so <code>createRepo</code> on a re-opened existing namespace decrypts existing blocks instead of generating an incompatible new key.</li></ul>
+<p>License &amp; decentralization:</p>
+<ul><li><code>scripts/check-licenses.js</code> SPDX matcher hardened against non-canonical spellings (<code>Apache 2.0</code>, <code>GPLv3</code>, etc.); now fails on AGPL/GPL outside the explicit exempt list.</li><li>AGPL transitive deps surfaced and isolated: <code>holesail</code>-family / <code>barely-colours</code> / <code>livefiles</code> are AGPL-3.0/GPL-3.0, pulled in via <code>p2p-hiverelay-client</code>. They are exempted <strong>only for <code>opengit-relay</code></strong> which is now licensed AGPL-3.0-or-later. <code>opengit-core</code>, <code>opengit-cli</code>, <code>opengit-mirror</code>, and <code>git-remote-opengit</code> remain Apache-2.0. New top-level <code>LICENSING.md</code> documents the matrix.</li></ul>
+<p>Test suite: 70/70 passing against the v7 stack (was: not-installed before this revision).</p>
+<h3>v0.0.4</h3>
+<p>Phase: persistent identity, wrapped-key collaborator sharing, multi-writer Autobase refs, blind-relay scaffolding, pubkey-pinning, author-signed manifests.</p>
+<p>Added — phase 4a (identity + wrapped keys):</p>
+<ul><li><code>IdentityStore</code> — load/save persistent identity at <code>$OPENGIT_HOME/profiles/&lt;p&gt;/identity.key</code> (mode 0600). New CLI: <code>opengit identity [show|init|reset]</code>.</li><li><code>wrappedKey</code> module — libsodium sealed-box (with ed25519↔x25519 conversion). Wraps a 32-byte content key for any recipient identity pubkey.</li><li><code>OpengitRepo.addInvite / acceptInvite / revokeInvite / listInvites</code> (§3.7.5). Wrapped entries live in <code>ns:meta-keys</code> (plaintext core; the wrapped value is itself encrypted via sealed-box).</li><li>Self-invite on private-repo init: owner can re-bootstrap content key from a backup of the repo alone, given their identity.</li><li>New CLI: <code>opengit invite &lt;repo&gt; &lt;pubkey&gt;</code>, <code>accept-invite &lt;repo&gt;</code>, <code>list-invites &lt;repo&gt;</code>.</li></ul>
+<p>Added — phase 4b (multi-writer):</p>
+<ul><li><code>MultiWriterRefs</code> (Autobase-backed) at <code>ns:refs-inputs</code> with deterministic <code>apply</code> function. Opt-in at create with <code>--multi-writer</code>. Single-writer repos created in v0.0.3 keep working.</li><li>Inputs: <code>ref-set</code> / <code>ref-del</code> / <code>add-writer</code> / <code>remove-writer</code>, all signed.</li><li>Apply enforces: signature validity, fast-forward, writer-set membership, owner-only writer management.</li><li>New CLI: <code>opengit init &lt;name&gt; --multi-writer</code>, <code>add-writer</code>, <code>remove-writer</code>, <code>list-writers</code>.</li><li>New <code>ns:meta</code> keys: <code>multiwriter</code> (boolean), <code>bootstrap</code> (<code>{owners, writers}</code>).</li></ul>
+<p>Added — phase 4c (blind-relay scaffolding):</p>
+<ul><li>New package <code>packages/opengit-relay/</code> — thin wrapper over <code>p2p-hiverelay-client</code>. Hard-deps on the SDK (refuses to run silently in plaintext mode).</li><li><code>OpengitForge.publishToBlindRelay(repo, opts)</code> — lazy-loads HiveRelay client; passes repo's content key as <code>encryptionKey</code>.</li><li><code>PinnedRelays</code> (<code>$OPENGIT_HOME/profiles/&lt;p&gt;/pinned-relays.json</code>) — out-of-band trust pins for relay identities (matches HiveRelay's <code>client.pinRelay()</code> shape).</li><li><code>manifest</code> module in <code>opengit-relay</code> — Ed25519-signed author seeding manifests with TTL + skew protection, canonical JSON (sorted keys) for stable signatures across encoders. Compatible in shape with HiveRelay's manifest endpoint.</li><li>New CLI: <code>pin-relay</code>, <code>unpin-relay</code>, <code>list-pins</code>, <code>blind-publish</code>, <code>unseed</code> (last is lib-only until v0.0.5 wires the broadcast plumbing).</li></ul>
+<p>Plan + verified upstream reality: see <a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</p>
+<h3>v0.0.3</h3>
+<p>Added:</p>
+<ul><li>Shadow-bridge architecture for <code>git-remote-opengit</code> (§5.1 fully rewritten).</li><li><code>ShadowRepo</code> library type: per-repo bare git directory with <code>pullFromRepo</code> (Corestore→shadow) and <code>pushToRepo</code> (shadow→Corestore).</li><li>Helper now advertises <code>connect</code>, spawns <code>git upload-pack</code> / <code>git receive-pack</code> against the shadow, pipes stdio, syncs back on push.</li><li>Custom byte-mode stdin reader so the helper can switch from line-based protocol to raw smart-protocol passthrough at the moment of <code>connect</code> without dropping bytes.</li><li><code>gitAvailable()</code> probe + clean error if <code>git</code> binary is missing (exit 4).</li></ul>
+<p>Changed:</p>
+<ul><li>Helper capability set is now <code>{connect, option, list}</code> (was <code>{fetch, push, option}</code> previously stubbed).</li><li>Per-OID object index is no longer required for v0.0.3 fetch/clone — packs replicate as Hyperblobs entries; the shadow regenerates <code>.idx</code> on demand. Per-OID indexing remains in the data model for future indexer-relay use.</li></ul>
+<p>Behavior:</p>
+<ul><li>Runtime dependency on the <code>git</code> binary is now hard-required by the helper. The library (<code>opengit-core</code>) still works without git.</li></ul>
+<h3>v0.0.2</h3>
+<p>Added:</p>
+<ul><li>§3.7 Encryption &amp; content keys — per-repo content key, stored locally in keyring (per profile).</li><li>§4.3 Petname file format — local-first naming.</li><li>§5.5 Private-topic derivation — <code>blake2b(&quot;opengit/v1:topic:private:&quot; + contentKey)</code>.</li><li>§11.4 Storage profiles — <code>$OPENGIT_HOME/profiles/&lt;name&gt;/...</code>, env var <code>OPENGIT_PROFILE</code>.</li></ul>
+<p>Changed:</p>
+<ul><li>§4.2 reordered to put petnames as the floor, slashtags/registries as opt-in convenience.</li><li>§13 stability table expanded with new specs.</li><li>§16 glossary expanded with content-key, mirror, blind-relay, petname, profile.</li></ul>
+<p>Behavior:</p>
+<ul><li>Repo visibility is fixed at init time (no in-place re-encryption).</li><li>v0.0.2 ships repo-creator-only key management; collaborator key sharing is out-of-band until v0.0.3.</li></ul>
+<h3>v0.0.1 (initial)</h3>
+<p>Initial protocol publication. See git history for the diff against this revision.</p>
+</article>
+<footer>
+  <div class="wrap">
+    <p>
+      Apache-2.0 by default · No telemetry · No phone-home ·
+      <a href="https://github.com/bigdestiny2/opengit">source</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

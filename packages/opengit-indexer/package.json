@@ -1,0 +1,21 @@
+{
+  "name": "opengit-indexer",
+  "version": "0.0.7",
+  "description": "Opt-in indexer relay for Opengit. Subscribes to a list of public repos, ingests their meta + issues, exposes a Hyperbee-backed search RPC over Hyperswarm. Multi-indexer: clients query N indexers in parallel.",
+  "license": "Apache-2.0",
+  "main": "lib/indexer.js",
+  "bin": {
+    "opengit-indexer": "bin/opengit-indexer.js"
+  },
+  "exports": {
+    ".": "./lib/indexer.js",
+    "./query": "./lib/query.js",
+    "./constants": "./lib/constants.js"
+  },
+  "dependencies": {
+    "opengit-core": "*",
+    "hyperbee": "^2.27.3",
+    "compact-encoding": "^2.15.0",
+    "b4a": "^1.6.6"
+  }
+}

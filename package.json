@@ -1,0 +1,17 @@
+{
+  "name": "opengit",
+  "version": "0.0.1",
+  "private": true,
+  "description": "P2P-native code forge on the Pear/Bare/Holepunch stack",
+  "license": "Apache-2.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "node --import ./test/setup.js --test --test-timeout=45000 packages/*/test/*.test.js packages/*/test/integration/*.test.js",
+    "demo": "node examples/end-to-end.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

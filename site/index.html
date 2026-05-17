@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opengit — P2P-native code forge on the Pear/Bare/Holepunch stack</title>
+<meta name="description" content="P2P-native code forge with drop-in git compatibility. Available offline. No central server. Built on Holepunch v7 + HiveRelay + PearBrowser.">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="brand">
+      <span class="logo">⌬</span>
+      <span class="name">Opengit</span>
+      <span class="badge">v0.0.8 · 100 tests · 97 pass · 3 skip</span>
+    </div>
+    <h1>A peer-to-peer code forge.</h1>
+    <p class="lede">
+      Drop-in <code>git clone opengit://...</code> compatibility, no central server,
+      always-available repos via blind-encrypted relays, cryptographically authored
+      issues + PRs, browseable from PearBrowser via <code>hyper://</code>.
+      Built on the Holepunch v7 stack. Apache-2.0.
+    </p>
+    <div class="cta">
+      <a class="cta-primary" href="/docs/quickstart.html">5-minute quickstart →</a>
+      <a class="cta-secondary" href="https://github.com/bigdestiny2/opengit">source</a>
+      <a class="cta-secondary" href="/docs/spec.html">full spec</a>
+    </div>
+  </div>
+</header>
+
+<section class="why">
+  <div class="wrap">
+    <h2>What it actually is</h2>
+    <div class="cols">
+      <div>
+        <h3>Drop-in <code>git</code></h3>
+        <p>
+          <code>opengit://&lt;key&gt;</code> URLs work with stock <code>git clone</code>,
+          <code>git push</code>, <code>git fetch</code>. The <code>git-remote-opengit</code>
+          helper bridges to a per-repo bare-git shadow that <code>git upload-pack</code>
+          and <code>git receive-pack</code> drive directly. No new VCS.
+        </p>
+      </div>
+      <div>
+        <h3>Owner sleeps, repo stays online</h3>
+        <p>
+          <code>opengit-mirror</code> (public) and <code>opengit-relay</code> (private,
+          blind-encrypted) keep your repo reachable when your laptop is closed.
+          Anyone can run a relay — or use the verified multi-region
+          <a href="/docs/known-relays.html">HiveRelay endpoints</a>.
+        </p>
+      </div>
+      <div>
+        <h3>Crypto-authored issues + PRs</h3>
+        <p>
+          Issues and PRs are Autobase-backed thread systems. Every comment, review,
+          merge is signed by an Ed25519 identity. Apply rules enforce who can close,
+          merge, label. Signatures verify on every replica.
+        </p>
+      </div>
+      <div>
+        <h3>Browseable from your phone</h3>
+        <p>
+          <code>opengit pages publish</code> renders the repo's HEAD into a static-HTML
+          Hyperdrive. Open <code>hyper://&lt;key&gt;/</code> in
+          <a href="https://github.com/bigdestiny2/PearBrowser">PearBrowser</a> on iOS —
+          no Opengit-specific code on the browser side.
+        </p>
+      </div>
+      <div>
+        <h3>No telemetry. Ever.</h3>
+        <p>
+          Every binary makes only the network calls required by your stated
+          operations. No analytics, no phone-home, no auto-update. The
+          <a href="/docs/decentralization-audit.html">decentralization audit</a>
+          documents how, and the <a href="/docs/license-check.html">license check</a>
+          enforces no AGPL-by-default.
+        </p>
+      </div>
+      <div>
+        <h3>Apache-2.0 everywhere it matters</h3>
+        <p>
+          Six of seven packages are Apache-2.0 end-to-end.
+          The seventh (<code>opengit-relay</code>) is Apache-2.0 by default;
+          AGPL-3.0 only if you opt into <code>--use-hiverelay</code>'s
+          AGPL-licensed transport. Verified by <code>scripts/check-licenses.js</code>.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="quickstart">
+  <div class="wrap">
+    <h2>The 30-second tour</h2>
+    <div class="grid-2col">
+      <div>
+        <h3>Push a public repo</h3>
+        <pre><code>npm install -g opengit-cli git-remote-opengit
+opengit identity init
+opengit init my-project
+git remote add p2p opengit://$(opengit info my-project | grep ^key | awk '{print $2}')
+git push p2p main</code></pre>
+      </div>
+      <div>
+        <h3>Render it for PearBrowser</h3>
+        <pre><code>opengit pages publish my-project
+# → hyper://&lt;driveKey&gt;/
+
+opengit pages watch my-project
+# auto-republish on every push</code></pre>
+      </div>
+      <div>
+        <h3>Open an issue (signed)</h3>
+        <pre><code>opengit issue open my-project "Bug" --body "details"
+opengit issue list my-project
+opengit issue show my-project &lt;issueId&gt;</code></pre>
+      </div>
+      <div>
+        <h3>Search across indexers</h3>
+        <pre><code># run an indexer (allowlist-only)
+opengit-indexer --repo my-project &amp;
+
+# fan out queries — multiple indexers in parallel
+node -e "const { OpengitForge } = require('opengit-core');
+const { fanOutQuery } = require('opengit-indexer/query');
+// ..."</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="components">
+  <div class="wrap">
+    <h2>Seven packages</h2>
+    <table>
+      <thead><tr>
+        <th>Package</th><th>Role</th><th>License</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><code>opengit-core</code></td>
+          <td>Library: repo, forge, identity, encryption, multi-writer refs, issues, PRs, petnames, profiles, topics.</td>
+          <td>Apache-2.0</td>
+        </tr>
+        <tr>
+          <td><code>git-remote-opengit</code></td>
+          <td>Git remote helper. Bridges <code>git</code> to <code>opengit://</code> URLs via a shadow bare repo.</td>
+          <td>Apache-2.0</td>
+        </tr>
+        <tr>
+          <td><code>opengit-cli</code></td>
+          <td>User CLI. 24 subcommands: init, info, issue, pr, pages, identity, invite, relay, indexer, etc.</td>
+          <td>Apache-2.0</td>
+        </tr>
+        <tr>
+          <td><code>opengit-mirror</code></td>
+          <td>Plaintext public-repo mirror daemon.</td>
+          <td>Apache-2.0</td>
+        </tr>
+        <tr>
+          <td><code>opengit-relay</code></td>
+          <td>Blind/encrypted private-repo relay. Default: native Hyperswarm path.</td>
+          <td>Apache-2.0 (default)<br><span class="muted">AGPL-3.0 with <code>--use-hiverelay</code></span></td>
+        </tr>
+        <tr>
+          <td><code>opengit-pages</code></td>
+          <td>Renders a repo's HEAD into a static-HTML Hyperdrive for PearBrowser.</td>
+          <td>Apache-2.0</td>
+        </tr>
+        <tr>
+          <td><code>opengit-indexer</code></td>
+          <td>Allowlist-only search relay. Hyperbee-backed inverted index, Protomux RPC.</td>
+          <td>Apache-2.0</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="docs-index">
+  <div class="wrap">
+    <h2>Documentation</h2>
+    <ul class="docs-list">
+      <li><a href="/docs/quickstart.html"><strong>Quickstart</strong></a> — install, identity, first repo, first push, first issue. 5 minutes.</li>
+      <li><a href="/docs/spec.html"><strong>Spec</strong></a> — protocol, data model, wire formats, every namespace and Autobase apply rule.</li>
+      <li><a href="/docs/feasibility.html"><strong>Feasibility</strong></a> — RED/YELLOW/GREEN per component. Honest about what works.</li>
+      <li><a href="/docs/decentralization-audit.html"><strong>Decentralization audit</strong></a> — 10 principles, scorecard, open action items.</li>
+      <li><a href="/docs/deep-audit.html"><strong>Deep audit (v0.0.7)</strong></a> — comprehensive review. Code surface, threat model, test coverage, next moves.</li>
+      <li><a href="/docs/improvement-research.html"><strong>Improvement research</strong></a> — competitive landscape, untapped Holepunch primitives, prioritized roadmap for v0.0.9 → v0.2.</li>
+      <li><a href="/docs/hiverelay-integration.html"><strong>HiveRelay integration</strong></a> — verified upstream snapshot at v0.8.1, blind-relay path, atomic custody.</li>
+      <li><a href="/docs/pearbrowser-integration.html"><strong>PearBrowser integration</strong></a> — three integration shapes, the pages-drive choice.</li>
+      <li><a href="/docs/licensing.html"><strong>Licensing</strong></a> — per-package matrix.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>
+      Apache-2.0 by default · No telemetry · No phone-home ·
+      <a href="https://github.com/bigdestiny2/opengit">source</a>
+    </p>
+    <p class="muted">
+      This page is itself a static site rendered by <code>opengit-pages</code>'s
+      sister build. Zero JavaScript, zero external fonts, fully offline-readable.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
