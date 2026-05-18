@@ -61,6 +61,23 @@
     return '<div class="skel" aria-busy="true" aria-label="Loading">' + r + '</div>'
   }
   function defaultBranch () { return REPO ? REPO.defaultBranch : 'main' }
+  function plural (n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')) }
+  function repoAge (r) {
+    var d = r && (r.generatedAt || r.updatedAt || r.publishedAt)
+    return d ? (rel(d) || fmt(d)) : ''
+  }
+  function cloneUrl (r) { return 'opengit://' + (r.repoKeyZ32 || r.key || '') }
+  function cliRows (rows) {
+    return '<div class="clirows">' + rows.map(function (v) {
+      return '<div class="clone-row"><code>' + esc(v) + '</code><button class="copy" type="button" data-c="' + esc(v) + '" aria-label="Copy command">copy</button></div>'
+    }).join('') + '</div>'
+  }
+  function emptyBox (title, body, rows, href, label) {
+    return '<div class="empty rich"><div class="empty-title">' + esc(title) + '</div>' +
+      (body ? '<p>' + esc(body) + '</p>' : '') +
+      (rows && rows.length ? cliRows(rows) : '') +
+      (href ? '<a class="btn" href="' + href + '">' + esc(label || 'go back') + '</a>' : '') + '</div>'
+  }
 
   // ── markdown (README, issue/PR bodies) ──────────────────────────────────
   function md (src) {
@@ -86,7 +103,12 @@
         while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) { it.push('<li>' + inline(lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, '')) + '</li>'); i++ }
         out.push('<' + tag + '>' + it.join('') + '</' + tag + '>'); continue
       }
-      if (/^>\s?/.test(ln)) { var q = []; while (i < lines.length && /^>\s?/.test(lines[i])) { q.push(inline(lines[i].replace(/^>\s?/, ''))); i++ } out.push('<blockquote>' + q.join('<br>') + '</blockquote>'); continue }
+      if (/^>\s?/.test(ln)) {
+        var q = []
+        while (i < lines.length && /^>\s?/.test(lines[i])) { q.push(lines[i].replace(/^>\s?/, '')); i++ }
+        out.push('<blockquote>' + inline(q.join(' ')) + '</blockquote>')
+        continue
+      }
       if (/^\s*\|.*\|\s*$/.test(ln) && i + 1 < lines.length && /^\s*\|[-:\s|]+\|\s*$/.test(lines[i + 1])) {
         function cells (r) { return r.replace(/^\s*\||\|\s*$/g, '').split('|').map(function (c) { return c.trim() }) }
         var rows = ['<tr>' + cells(ln).map(function (c) { return '<th>' + inline(c) + '</th>' }).join('') + '</tr>']; i += 2
@@ -140,6 +162,9 @@
       '<header class="top"><div class="row">' +
         '<a class="brand" href="#/"><span class="g">⌬</span> ' + esc(INDEX && INDEX.count === 1 ? INDEX.repos[0].name : 'opengit') + '</a>' +
         '<div id="ctx"></div>' +
+        '<div class="session" title="This page is a static snapshot. Browsing, search, and copy actions happen locally.">' +
+          '<span class="dot"></span><span>viewer session</span><span>read-only</span>' +
+        '</div>' +
         '<form class="search" id="sf" role="search"><input id="sq" aria-label="Search" placeholder="search…" autocomplete="off"></form>' +
         '<button id="themebtn" class="iconbtn" aria-label="Toggle theme"></button>' +
       '</div></header>' +
@@ -157,6 +182,8 @@
     byId('main').addEventListener('click', function (e) {
       var b = e.target.closest && e.target.closest('button.copy')
       if (!b) return
+      e.preventDefault()
+      e.stopPropagation()
       var v = b.getAttribute('data-c') || ''
       var done = function () { var o = b.textContent; b.textContent = 'copied ✓'; setTimeout(function () { b.textContent = o }, 1400) }
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(done, done)
@@ -189,7 +216,7 @@
       (br.length > 1 ? '<select id="brsel" aria-label="Branch">' + opts + '</select>' : '')
     var sel = byId('brsel')
     if (sel) sel.onchange = function () { location.hash = rurl('/files/' + encodeURIComponent(sel.value) + '/') }
-    var sq = byId('sq'); if (sq) sq.placeholder = inRepo ? 'search files / issues…' : 'search repos…'
+    var sq = byId('sq'); if (sq) sq.placeholder = inRepo ? 'search files, issues, pull requests' : 'search repository names and descriptions'
   }
   function chrome (active) { renderShell(); setCtx(active) }
   function currentBranch () {
@@ -200,6 +227,14 @@
   function empty (msg, href, label) {
     return '<div class="empty">' + esc(msg) + (href ? ' <a href="' + href + '">' + esc(label || 'go back') + '</a>' : '') + '</div>'
   }
+  function snapshotNotice (branch) {
+    var isDefault = branch === defaultBranch()
+    return '<div class="notice">' +
+      '<strong>Read-only snapshot</strong>' +
+      '<span>This Hyperdrive view cannot create issues, push commits, or refresh itself. Use the CLI to work with the source repo.</span>' +
+      (!isDefault ? '<span>Only commit history is guaranteed for non-default branches; file trees and diffs are rendered for <code>' + esc(defaultBranch()) + '</code>.</span>' : '') +
+      '</div>'
+  }
 
   // ── forge home ──────────────────────────────────────────────────────────
   function vForgeHome () {
@@ -207,15 +242,45 @@
     var repos = (INDEX && INDEX.repos) || []
     var head = '<div class="chip">peer-to-peer forge</div><h1>Repositories</h1>' +
       '<p class="repo-desc">' + repos.length + ' repositor' + (repos.length === 1 ? 'y' : 'ies') +
-      ' published here. Network-wide discovery is the opengit-indexer’s job (no global registry by design).</p>'
+      ' published here as a read-only snapshot. Network-wide discovery is the opengit-indexer’s job (no global registry by design).</p>'
     var list = repos.map(function (r) {
-      return '<a class="li repocard" href="#/r/' + encodeURIComponent(r.key) + '/">' +
-        '<div class="rc-main"><span class="nm">' + esc(r.name) + '</span>' +
+      var u = cloneUrl(r)
+      return '<div class="li repocard" data-repo-key="' + esc(r.key) + '">' +
+        '<div class="rc-top"><a class="rc-title" href="#/r/' + encodeURIComponent(r.key) + '/">' + esc(r.name) + '</a>' +
         '<span class="badge ' + (r.visibility === 'private' ? 'closed' : 'open') + '">' + esc(r.visibility || 'public') + '</span></div>' +
-        (r.description ? '<div class="rc-desc">' + esc(r.description) + '</div>' : '') +
-        '<div class="key">opengit://' + esc(r.key) + '</div></a>'
+        (r.description ? '<div class="rc-desc">' + esc(r.description) + '</div>' : '<div class="rc-desc dim">No description published in this snapshot.</div>') +
+        '<div class="rc-meta" id="meta-' + esc(r.key) + '"><span>snapshot metadata loading</span></div>' +
+        '<div class="rc-clone"><code>' + esc(u) + '</code><button class="copy" type="button" data-c="' + esc('git clone ' + u) + '" aria-label="Copy clone command">clone</button></div></div>'
     }).join('')
-    setMain(h('<div class="wrap">' + head + '<div class="panel list">' + (list || empty('no repositories')) + '</div></div>'))
+    setMain(h('<div class="wrap">' + head + '<div class="panel list">' + (list || emptyBox('No repositories in this snapshot', 'Publish a repo into this forge, then regenerate the pages bundle. This viewer is intentionally read-only.', ['opengit pages publish <repo>', 'opengit index refresh'])) + '</div></div>'))
+    repos.forEach(enrichRepoCard)
+  }
+  function enrichRepoCard (r) {
+    var el = byId('meta-' + r.key)
+    if (!el) return
+    getJSON('r/' + r.key + '/api/repo.json').then(function (repo) {
+      var bits = [
+        plural((repo.branches || []).length, 'branch', 'branches'),
+        plural((repo.tags || []).length, 'tag', 'tags')
+      ]
+      var age = repoAge(repo)
+      if (age) bits.push('snapshot ' + age)
+      el.innerHTML = bits.map(function (b) { return '<span>' + esc(b) + '</span>' }).join('')
+      return Promise.all([
+        getJSON('r/' + r.key + '/api/commits/' + safeBranch(repo.defaultBranch) + '.json').catch(function () { return { commits: [] } }),
+        getJSON('r/' + r.key + '/api/issues.json').catch(function () { return [] }),
+        getJSON('r/' + r.key + '/api/prs.json').catch(function () { return [] })
+      ]).then(function (all) {
+        var more = [
+          plural((all[0].commits || []).length, 'commit', 'commits'),
+          plural((all[1] || []).length, 'issue', 'issues'),
+          plural((all[2] || []).length, 'pull request', 'pull requests')
+        ]
+        el.innerHTML = bits.concat(more).map(function (b) { return '<span>' + esc(b) + '</span>' }).join('')
+      })
+    }).catch(function () {
+      el.innerHTML = '<span>metadata unavailable in this snapshot</span>'
+    })
   }
 
   // ── per-repo views ──────────────────────────────────────────────────────
@@ -232,7 +297,7 @@
         '<button class="copy" type="button" data-c="' + esc(val) + '" aria-label="Copy">copy</button></div>'
     }
     return '<div class="clone">' + row(u) + row(g) +
-      '<p class="muted small">Needs the <code>git-remote-opengit</code> helper on PATH — ' +
+      '<p class="muted small">Read-only here. To edit, clone with the <code>git-remote-opengit</code> helper on PATH — ' +
       '<a href="https://github.com/bigdestiny2/Opengit#60-second-quickstart">setup</a>. ' +
       'Or browse it here, offline, in <a href="https://github.com/bigdestiny2/PearBrowser">PearBrowser</a>.</p></div>'
   }
@@ -242,6 +307,7 @@
     var head = '<div class="chip">peer-to-peer · ' + esc(REPO.visibility || 'public') + '</div><h1>' + esc(REPO.name) + '</h1>' +
       (REPO.description ? '<p class="repo-desc">' + esc(REPO.description) + '</p>' : '') +
       clonePanel() +
+      snapshotNotice(b ? b.name : defaultBranch()) +
       '<div class="refbar"><a class="btn" href="' + rurl('/files/' + encodeURIComponent(b ? b.name : 'main') + '/') + '">Browse files →</a>' +
       ' <a class="btn" href="' + rurl('/commits/' + encodeURIComponent(b ? b.name : 'main')) + '">Commits</a>' +
       ' <a class="btn" href="#/">← all repos</a>' +
@@ -255,15 +321,15 @@
     }).catch(function () {
       getJSON(base() + 'api/commits/' + safeBranch(b.name) + '.json').then(function (d) {
         byId('rm').innerHTML = '<h2>Recent commits</h2><div class="panel list">' + d.commits.slice(0, 15).map(commitRow).join('') + '</div>'
-      }).catch(function () { byId('rm').innerHTML = empty('No README or commit data in this snapshot.') })
+      }).catch(function () { byId('rm').innerHTML = emptyBox('No README or commit data', 'This snapshot did not include a README or rendered commit list for the selected branch.', ['git clone ' + cloneUrl(REPO)]) })
     })
   }
   function vCommits (branch) {
     chrome('commits')
-    setMain(h('<div class="wrap"><h1>Commits <span class="muted mono">· ' + esc(branch) + '</span></h1><div id="cl" class="panel list">' + skeleton() + '</div></div>'))
+    setMain(h('<div class="wrap"><h1>Commits <span class="muted mono">· ' + esc(branch) + '</span></h1>' + snapshotNotice(branch) + '<div id="cl" class="panel list">' + skeleton() + '</div></div>'))
     getJSON(base() + 'api/commits/' + safeBranch(branch) + '.json').then(function (d) {
-      byId('cl').innerHTML = d.commits.length ? d.commits.map(commitRow).join('') : empty('No commits on this branch.')
-    }).catch(function () { byId('cl').innerHTML = empty('No commit data for ' + branch + ' in this snapshot.', rurl('/commits/' + encodeURIComponent(defaultBranch())), 'view ' + defaultBranch()) })
+      byId('cl').innerHTML = d.commits.length ? d.commits.map(commitRow).join('') : emptyBox('No commits on this branch', 'The branch exists, but no commit entries were rendered into this static snapshot.', ['git clone ' + cloneUrl(REPO)])
+    }).catch(function () { byId('cl').innerHTML = emptyBox('No commit data for ' + branch, 'Try the default branch, or clone the source repo to inspect refs that were not fully rendered.', ['git clone ' + cloneUrl(REPO)], rurl('/commits/' + encodeURIComponent(defaultBranch())), 'view ' + defaultBranch()) })
   }
   function vCommit (oid) {
     chrome('commits')
@@ -274,7 +340,7 @@
         '<h1>' + esc(c.subject) + '</h1><div class="cmeta">' + esc(c.author) + ' · ' + esc(c.date) +
         ' · <button class="copy linkish" type="button" data-c="' + esc(c.oid) + '" aria-label="Copy commit SHA"><span class="ac">' + esc(c.oid) + '</span></button></div>' +
         (c.body ? '<div class="cmsg">' + esc(c.body) + '</div>' : '') + diffBlock(c.diff)
-    }).catch(function () { byId('cd').innerHTML = empty('Commit not in this snapshot.', rurl('/commits/' + encodeURIComponent(defaultBranch())), 'back to commits') })
+    }).catch(function () { byId('cd').innerHTML = emptyBox('Commit not in this snapshot', 'The commit may exist in the repo, but this published view only contains rendered snapshot data.', ['git clone ' + cloneUrl(REPO)], rurl('/commits/' + encodeURIComponent(defaultBranch())), 'back to commits') })
   }
   function buildTree (entries) {
     var root = { dirs: {}, files: [] }
@@ -308,37 +374,46 @@
       var bodyTop = '<div class="crumb">' + crumbs.join(' / ') + (hit ? ' / <span class="ac">' + esc(p.split('/').pop()) + '</span>' : '') + '</div>'
       if (hit) {
         setMain(h('<div class="wrap">' + bodyTop + '<div class="fileview"><div class="fhead"><span>' + esc(p) + '</span><span class="fhead-act"><button class="copy linkish" type="button" data-c="' + esc(p) + '" aria-label="Copy path">path</button> <a class="mono" href="' + base() + 'raw/' + sb + '/' + encodeURI(p) + '">raw</a></span></div><div id="fc">' + skeleton(4) + '</div></div></div>'))
-        if (hit.text === false) { byId('fc').innerHTML = empty('Binary or oversized file.', base() + 'raw/' + sb + '/' + encodeURI(p), 'download raw'); return }
+        if (hit.text === false) { byId('fc').innerHTML = emptyBox('Binary or oversized file', 'The file is present, but this viewer cannot render it inline.', null, base() + 'raw/' + sb + '/' + encodeURI(p), 'download raw'); return }
         getText(base() + 'raw/' + sb + '/' + encodeURI(p)).then(function (t) {
           byId('fc').innerHTML = /\.(md|markdown)$/i.test(p) ? '<div class="readme" style="border:0">' + md(t) + '</div>' : codeBlock(t)
           if (location.hash.indexOf('#L') > -1) { var ln = byId(location.hash.split('/').pop()); if (ln) ln.scrollIntoView() }
-        }).catch(function () { byId('fc').innerHTML = empty('File not in this snapshot.') })
+        }).catch(function () { byId('fc').innerHTML = emptyBox('File not in this snapshot', 'The tree entry was listed, but the raw file was not available in the published bundle.', ['git clone ' + cloneUrl(REPO)]) })
       } else {
-        setMain(h('<div class="wrap">' + bodyTop + '<div class="panel list">' + (listHtml || empty('empty directory')) + '</div></div>'))
+        setMain(h('<div class="wrap">' + snapshotNotice(branch) + bodyTop + '<div class="panel list">' + (listHtml || emptyBox('Empty directory', 'No files were rendered at this path in the snapshot.')) + '</div></div>'))
       }
     }
     if (TREE[cacheKey]) return paint(TREE[cacheKey])
     setMain(h('<div class="wrap">' + skeleton() + '</div>'))
     getJSON(base() + 'api/tree/' + sb + '.json').then(function (d) { TREE[cacheKey] = { entries: d.entries, map: buildTree(d.entries) }; paint(TREE[cacheKey]) })
       .catch(function () {
-        setMain(h('<div class="wrap">' + empty(isDefault
-          ? 'No file tree in this snapshot.'
-          : 'This is a static snapshot — only the default branch (' + defaultBranch() + ') has files/diffs rendered. “' + branch + '” has commit history only.',
+        setMain(h('<div class="wrap">' + emptyBox(isDefault
+          ? 'No file tree in this snapshot'
+          : 'Branch files are not rendered here',
+          isDefault
+            ? 'The source repo may still have files. This static page only shows data included during publishing.'
+            : 'This static snapshot renders commit history for branches, but file trees and diffs are limited to the default branch (' + defaultBranch() + ').',
+          ['git clone ' + cloneUrl(REPO), 'git -C <repo> switch ' + branch],
           rurl('/files/' + encodeURIComponent(defaultBranch()) + '/'), 'browse ' + defaultBranch()) + '</div>'))
       })
   }
   function stateBadge (s) { return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>' }
   function vRepoList (kind) {
     chrome(kind)
-    setMain(h('<div class="wrap"><h1>' + (kind === 'issues' ? 'Issues' : 'Pull Requests') + '</h1><div id="ls" class="panel list">' + skeleton() + '</div></div>'))
+    setMain(h('<div class="wrap"><h1>' + (kind === 'issues' ? 'Issues' : 'Pull Requests') + '</h1>' + snapshotNotice(defaultBranch()) + '<div id="ls" class="panel list">' + skeleton() + '</div></div>'))
     getJSON(base() + (kind === 'issues' ? 'api/issues.json' : 'api/prs.json')).then(function (arr) {
-      if (!arr.length) { byId('ls').innerHTML = empty('No ' + kind + ' yet.'); return }
+      if (!arr.length) {
+        byId('ls').innerHTML = emptyBox('No ' + (kind === 'issues' ? 'issues' : 'pull requests') + ' in this snapshot',
+          'This viewer cannot create or sync discussion. Use the CLI against the repo source to open or inspect live collaboration data.',
+          kind === 'issues' ? ['opengit issue open <repo>'] : ['opengit pr open <repo>'])
+        return
+      }
       byId('ls').innerHTML = arr.map(function (it) {
         var id = kind === 'issues' ? it.issueId : it.prId
         return '<a class="li" href="' + rurl('/' + (kind === 'issues' ? 'issue' : 'pr') + '/' + encodeURIComponent(id)) + '">' + stateBadge(it.state || 'open') +
           '<span class="nm">' + esc(it.title) + '</span><span class="mono">' + esc(short(it.by || it.openedBy || it.author || '')) + ' · ' + (rel(it.at || it.openedAt) || fmt(it.at || it.openedAt)) + '</span></a>'
       }).join('')
-    }).catch(function () { byId('ls').innerHTML = empty('No ' + kind + ' in this snapshot.') })
+    }).catch(function () { byId('ls').innerHTML = emptyBox('No ' + kind + ' data', 'The collaboration index was not included when this read-only snapshot was published.', ['git clone ' + cloneUrl(REPO)]) })
   }
   function note (who, when, bodyHtml, sig) {
     return '<div class="note"><div class="nh"><span class="who">' + esc(short(who)) + '</span><span class="muted mono">' + esc(when) + '</span></div>' +
@@ -375,7 +450,7 @@
         thread += note(e.by, rel(e.at) || fmt(e.at), e.body ? md(e.body) : '<span class="dim">— ' + esc(label) + (e.reason ? ': ' + esc(e.reason) : '') + (e.verdict ? ': ' + esc(e.verdict) : '') + '</span>', e.sig)
       })
       byId('th').innerHTML = hdr + '<div class="thread">' + thread + '</div>' + (kind === 'pr' ? prDiffHtml(d.diff) : '')
-    }).catch(function () { byId('th').innerHTML = empty('Not in this snapshot.', rurl('/' + (kind === 'issue' ? 'issues' : 'prs')), 'back') })
+    }).catch(function () { byId('th').innerHTML = emptyBox('Thread not in this snapshot', 'The issue or pull request may exist outside this published static bundle.', null, rurl('/' + (kind === 'issue' ? 'issues' : 'prs')), 'back') })
   }
   function vSearch (q) {
     q = (q || '').toLowerCase()
@@ -384,7 +459,7 @@
       res.push('<a class="li" href="#/r/' + encodeURIComponent(r.key) + '/"><span class="ico">⌬</span><span class="nm">repo: ' + esc(r.name) + '</span></a>')
     })
     chrome(REPO ? 'code' : 'home')
-    setMain(h('<div class="wrap"><h1>Search <span class="muted mono">· ' + esc(q) + '</span></h1><div id="sr" class="panel list">' + (res.join('') || '') + '<div class="empty" id="se">' + (res.length ? '' : (REPO ? 'searching…' : 'no matching repositories')) + '</div></div></div>'))
+    setMain(h('<div class="wrap"><h1>Search <span class="muted mono">· ' + esc(q || 'all') + '</span></h1><p class="repo-desc">Search covers names and descriptions on the forge home; inside a repo it also checks default-branch file paths, issue titles, and pull request titles included in this snapshot.</p><div id="sr" class="panel list">' + (res.join('') || '') + '<div class="empty" id="se">' + (res.length ? '' : (REPO ? 'searching snapshot…' : 'no matching repositories')) + '</div></div></div>'))
     if (!REPO) { if (res.length) { var s0 = byId('se'); if (s0) s0.remove() } return }
     var sb = safeBranch(REPO.defaultBranch), pend = 3
     function step () { if (--pend === 0) { var se = byId('se'); if (se) { if (document.querySelectorAll('#sr .li').length) se.remove(); else se.textContent = 'no matches' } } }

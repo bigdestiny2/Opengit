@@ -41,21 +41,25 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible{ou
 
 /* layout */
 .top{position:sticky;top:0;z-index:10;background:rgba(10,11,14,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd)}
-.top .row{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:16px;padding:11px 20px;flex-wrap:wrap}
+.top .row{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:10px 14px;padding:11px 20px;flex-wrap:wrap}
 .brand{font-family:var(--mono);font-weight:700;color:var(--tx);white-space:nowrap}
 .brand .g{color:var(--ac)}
 .brand:hover{text-decoration:none;color:var(--ach)}
-#ctx{display:flex;align-items:center;gap:14px;flex-wrap:wrap;min-width:0}
+#ctx{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;flex:1 1 auto}
 .crumbsep{white-space:nowrap}
-.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;min-width:0}
 .tabs a{font-family:var(--mono);font-size:.85rem;color:var(--mut);padding:6px 12px;border-radius:7px}
 .tabs a:hover{color:var(--tx);background:var(--bg2);text-decoration:none}
 .tabs a.on,.tabs a[aria-current]{color:var(--ac);background:var(--acd)}
 select{font:inherit;font-family:var(--mono);font-size:.82rem;background:var(--bg2);color:var(--tx);
-  border:1px solid var(--bd);border-radius:7px;padding:6px 9px}
-.search{margin-left:auto;display:flex}
+  border:1px solid var(--bd);border-radius:7px;padding:6px 9px;min-width:0;max-width:100%}
+.session{display:flex;align-items:center;gap:7px;min-height:32px;padding:5px 9px;border:1px solid var(--bd);
+  border-radius:7px;background:var(--bg1);color:var(--mut);font-family:var(--mono);font-size:.72rem;white-space:nowrap}
+.session span:last-child{color:var(--ac)}
+.dot{width:7px;height:7px;border-radius:999px;background:var(--ac);box-shadow:0 0 0 3px var(--acd);flex:0 0 auto}
+.search{margin-left:0;display:flex;flex:0 1 310px;min-width:210px}
 .search input{font:inherit;font-size:.85rem;background:var(--bg2);border:1px solid var(--bd);color:var(--tx);
-  padding:7px 12px;border-radius:7px;min-width:170px;font-family:var(--mono)}
+  padding:7px 12px;border-radius:7px;min-width:0;width:100%;font-family:var(--mono)}
 .search input:focus{outline:0;border-color:var(--ac)}
 .iconbtn{background:var(--bg2);border:1px solid var(--bd);color:var(--tx);border-radius:7px;
   width:32px;height:32px;line-height:1;font-size:1rem;padding:0}
@@ -66,7 +70,7 @@ main{outline:none}
 .foot a{color:var(--mut)}
 .foot time{color:var(--mut)}
 
-h1{font-size:1.5rem;margin:.2em 0 .4em;letter-spacing:-.02em}
+h1{font-size:1.5rem;margin:.2em 0 .4em;letter-spacing:0}
 h2{font-size:1.15rem;margin:1.6em 0 .6em;border-bottom:1px solid var(--bd);padding-bottom:.3em}
 h3{font-size:1rem;margin:1.4em 0 .5em}
 .repo-desc{color:var(--mut);margin:.2em 0 1em;max-width:72ch}
@@ -89,6 +93,8 @@ h3{font-size:1rem;margin:1.4em 0 .5em}
 .copy.linkish{background:none;border:0;padding:0;color:inherit}
 .copy.linkish:hover{color:var(--ach)}
 .clone .muted{margin:.7em 0 0}
+.clirows{display:flex;flex-direction:column;gap:8px;max-width:720px;margin:12px auto 0}
+.clirows .clone-row{margin:0}
 
 /* skeleton loaders */
 .skel{display:flex;flex-direction:column;gap:10px;padding:8px 0}
@@ -115,6 +121,14 @@ html[data-theme="light"] .badge.closed{background:#fbe9e7}
 html[data-theme="light"] .badge.merged{color:#7a3fb0;background:#f1e9fb;border-color:#dccbf0}
 .empty{padding:42px;text-align:center;color:var(--dim);font-family:var(--mono);font-size:.9rem}
 .empty a{color:var(--ac)}
+.empty.rich{font-family:var(--sans);color:var(--mut);text-align:left}
+.empty.rich .empty-title{font-family:var(--mono);color:var(--tx);font-size:1rem;margin:0 0 4px;text-align:center}
+.empty.rich p{max-width:66ch;margin:0 auto 12px;text-align:center}
+.empty.rich .btn{display:block;width:max-content;margin:14px auto 0}
+.notice{display:flex;gap:8px 12px;align-items:center;flex-wrap:wrap;margin:12px 0 16px;padding:10px 12px;
+  border:1px solid var(--add);border-radius:8px;background:var(--acd);color:var(--mut);font-size:.86rem}
+.notice strong{color:var(--ac);font-family:var(--mono);font-size:.78rem}
+.notice code{color:var(--tx)}
 
 /* file view */
 .crumb{font-family:var(--mono);font-size:.85rem;margin:0 0 12px;color:var(--mut)}
@@ -165,17 +179,32 @@ pre.diff .d{color:var(--red);background:rgba(240,104,110,.08)}pre.diff .at{color
 .note .sig{font-family:var(--mono);font-size:.72rem;color:var(--dim);padding:6px 15px;border-top:1px solid var(--bd)}
 
 /* forge home repo cards */
-.repocard{flex-direction:column;align-items:stretch;gap:6px}
-.repocard .rc-main{display:flex;align-items:center;gap:10px}
-.repocard .rc-main .nm{flex:0 1 auto;font-weight:600;color:var(--ac)}
+.repocard{flex-direction:column;align-items:stretch;gap:8px}
+.repocard:hover{background:var(--bg2)}
+.repocard .rc-top{display:flex;align-items:center;gap:10px;min-width:0}
+.repocard .rc-title{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-weight:700;color:var(--ac);font-size:1rem}
+.repocard .rc-title:hover{color:var(--ach)}
 .repocard .rc-desc{color:var(--mut);font-size:.92rem}
-.repocard .key{font-size:.74rem}
-.repocard:hover .rc-main .nm{color:var(--ach)}
+.repocard .rc-meta{display:flex;gap:6px;flex-wrap:wrap}
+.repocard .rc-meta span{font-family:var(--mono);font-size:.72rem;color:var(--mut);background:var(--bg2);
+  border:1px solid var(--bd);border-radius:999px;padding:2px 7px}
+.repocard .rc-clone{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.repocard .rc-clone code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.76rem;color:var(--mut);
+  border:1px solid var(--bd);border-radius:7px;background:var(--bg);padding:7px 9px}
 
 @media(max-width:680px){
-  .search{margin-left:0;order:9;width:100%}
+  .brand{flex:1 1 100%}
+  #ctx{flex:1 1 100%;order:2}
+  .session{order:3;flex:1 1 auto;justify-content:center}
+  .search{order:9;width:100%;flex-basis:100%;min-width:0}
   .search input{width:100%}
+  #ctx select{width:calc(100vw - 40px);max-width:calc(100vw - 40px);flex:0 1 calc(100vw - 40px)}
   .top .row{gap:10px}
   .wrap{padding:18px 14px 60px}
   .clone-row{flex-wrap:wrap}
+  .clone-row code{flex-basis:100%}
+  .repocard .rc-clone{grid-template-columns:1fr}
+  .repocard .rc-clone .copy{width:100%}
+  .tabs a{padding:6px 9px}
 }
