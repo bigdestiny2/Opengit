@@ -45,18 +45,29 @@ npm run deploy:cf
 First deploy returns a `https://opengit-forge.pages.dev` URL — verify it, then
 attach the domain.
 
-### Custom domain + DNS
+### Custom domain + DNS — `opengit.tech` (DNS on Cloudflare)
 
-In the Cloudflare dashboard → **Workers & Pages → opengit-forge → Custom
-domains → Set up a custom domain** → enter your domain. Then DNS:
+The zone is on Cloudflare, so this is the easy path — but the registrar's
+**placeholder records must be removed first** or the parking page keeps
+serving and the Pages attach conflicts.
 
-- **Domain's DNS is on Cloudflare:** the custom-domain step creates the record
-  automatically (apex or subdomain). Done. TLS is auto-provisioned.
-- **DNS elsewhere:** add a **CNAME** `<your-domain>` → `opengit-forge.pages.dev`.
-  For an apex (`example.com`) use your provider's ALIAS/ANAME/CNAME-flattening,
-  or move the zone to Cloudflare.
+1. **DNS → Records**, delete the two placeholders:
+   - `A   opengit.tech → 162.255.119.82` (parking IP)
+   - `CNAME www → parkingpage.…`
+   **Keep all `MX` records** (e-mail forwarding — unrelated).
+2. **Workers & Pages → opengit-forge → Custom domains → Set up a custom
+   domain** → `opengit.tech`. Cloudflare auto-creates the apex record
+   (CNAME-flattened → `opengit-forge.pages.dev`, proxied) and provisions TLS.
+3. Repeat for `www.opengit.tech` (add it as a second custom domain), or add a
+   bulk redirect `www.opengit.tech/* → https://opengit.tech/$1`.
 
-Re-deploy anytime with `npm run deploy:cf` — the domain stays attached.
+Requires the `opengit-forge` Pages project to already exist (i.e. you've run
+`npm run deploy:cf` at least once). Re-deploy anytime with `npm run
+deploy:cf` — the domain stays attached. Canonical/OG metadata already points
+at `https://opengit.tech/`.
+
+(DNS elsewhere, for reference: CNAME `<domain>` → `opengit-forge.pages.dev`;
+apex needs ALIAS/ANAME/flattening or move the zone to Cloudflare.)
 
 ## 3. Also publish as a Hyperdrive (P2P / PearBrowser — dogfood)
 
