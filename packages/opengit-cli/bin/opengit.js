@@ -57,6 +57,7 @@ const commands = {
   'unseed': cmdUnseed,
   'issue': cmdIssue,
   'pr': cmdPR,
+  'collab': cmdCollab,
   'pages': cmdPages,
   'help': cmdHelp
 }
@@ -1005,6 +1006,198 @@ function resolvePetname (kind, name) {
   return r.key
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// collab — the online, coordinated forge loop (Stage 4 of LIVE-TEST-PLAN.md).
+//
+// Unlike `issue`/`pr` (one-shot, local), these stay online and use the
+// proven v0.0.12 cross-party API: collabKeys → admitCollaborator → syncCollab,
+// then signed issues/PRs both directions + owner close/merge. This is the
+// exact logic verified end-to-end across two real OS processes
+// (scripts/live-collab.js E2E), promoted into the CLI.
+// ─────────────────────────────────────────────────────────────────────────────
+const _sleep = (ms) => new Promise(r => setTimeout(r, ms))
+async function _waitUntil (fn, { timeoutMs = 120000, intervalMs = 1500, label = 'condition' } = {}) {
+  const end = Date.now() + timeoutMs
+  while (Date.now() < end) {
+    try { const v = await fn(); if (v) return v } catch {}
+    await _sleep(intervalMs)
+  }
+  throw new Error(`timed out waiting for: ${label}`)
+}
+function _collabIdentity () {
+  // Stable, persisted per-profile identity. The maintainer MUST reuse the
+  // same one every run (it is the manifest owner / sole moderator).
+  return new IdentityStore({ profileName: PROFILE }).loadOrCreate()
+}
+function _collabFlag (args, name, def = null) {
+  const i = args.indexOf(name)
+  return (i >= 0 && i + 1 < args.length) ? args[i + 1] : def
+}
+function _say (m) { process.stdout.write(`[${new Date().toISOString().slice(11, 19)}] ${m}\n`) }
+
+async function cmdCollab (args) {
+  const role = args[0]
+  const mkForge = () => new OpengitForge({
+    storage: STORAGE_DIR, profileName: PROFILE, bootstrap: BOOTSTRAP, identity: _collabIdentity()
+  })
+
+  if (role === 'maintainer') {
+    const name = _collabFlag(args, '--name', 'opengit')
+    const reopen = _collabFlag(args, '--repo')
+    const admitFile = _collabFlag(args, '--admit-file', require('path').join(process.cwd(), 'live-admit.txt'))
+    const forge = mkForge()
+    await forge.ready()
+    const repo = reopen
+      ? await forge.openRepo(resolvePetname('repos', reopen))
+      : await forge.createRepo(name)
+    if (!reopen) {
+      try { new Petnames({ profileName: PROFILE }).add('repos', name, repo.keyZ32) } catch {}
+    }
+    await forge.joinRepoTopic(repo, { server: true, client: true })
+    await repo.collabKeys().catch(() => {})
+    _say(`maintainer online (profile "${PROFILE}")`)
+    _say(`REPO_KEY=${repo.keyZ32}`)
+    _say(`opengit:// URL → opengit://${repo.keyZ32}`)
+    _say(`git clients:   git clone opengit://${repo.keyZ32} <dir>   (git-remote-opengit on PATH)`)
+    _say(`waiting for the contributor blob in: ${admitFile}`)
+    _say(`(contributor runs \`opengit collab contributor --repo <KEY>\`, sends you CONTRIB_BLOB; put it in that file)`)
+    const me = b4a.toString(_collabIdentity().publicKey, 'hex')
+    const admitted = new Set(); const handled = new Set()
+    for (;;) {
+      try {
+        const fs = require('fs')
+        if (fs.existsSync(admitFile)) {
+          const raw = fs.readFileSync(admitFile, 'utf8').trim()
+          if (raw && !admitted.has(raw)) {
+            const keys = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'))
+            if (keys && keys.issues && keys.prs) {
+              await repo.admitCollaborator(keys); admitted.add(raw)
+              _say(`ADMITTED contributor (issues=${keys.issues.slice(0, 12)}… prs=${keys.prs.slice(0, 12)}…)`)
+            }
+          }
+        }
+      } catch (e) { _say(`admit error: ${e.message}`) }
+      try {
+        for (const iss of await repo.listIssues({ state: 'open' }).catch(() => [])) {
+          if (iss.author && iss.author.toLowerCase() !== me && !handled.has('i:' + iss.issueId)) {
+            await repo.closeIssue({ issueId: iss.issueId, reason: 'live-test: acknowledged' })
+            handled.add('i:' + iss.issueId)
+            _say(`CLOSED contributor issue ${iss.issueId} — "${iss.title}"`)
+          }
+        }
+        for (const pr of await repo.listPRs({ state: 'open' }).catch(() => [])) {
+          if (pr.openedBy && pr.openedBy.toLowerCase() !== me && !handled.has('p:' + pr.prId)) {
+            await repo.mergePR({ prId: pr.prId, mergeOid: 'f'.repeat(40), strategy: 'merge' })
+            handled.add('p:' + pr.prId)
+            _say(`MERGED contributor PR ${pr.prId} — "${pr.title}"`)
+          }
+        }
+      } catch (e) { _say(`moderate error: ${e.message}`) }
+      await _sleep(3000)
+    }
+  }
+
+  if (role === 'contributor') {
+    const repoRef = _collabFlag(args, '--repo')
+    if (!repoRef) throw new Error('usage: opengit collab contributor --repo <REPO_KEY>')
+    const forge = mkForge()
+    await forge.ready()
+    const repo = await forge.openRepo(resolvePetname('repos', repoRef))
+    await forge.joinRepoTopic(repo, { server: false, client: true })
+    _say(`contributor online (profile "${PROFILE}"), replicating ${repo.keyHex.slice(0, 16)}…`)
+    await _waitUntil(async () => {
+      await repo.refresh().catch(() => {})
+      const cr = repo.manifest ? await repo.manifest.get('cores').catch(() => null) : null
+      return cr && cr.value && cr.value.issuesAutobase && cr.value.prsAutobase
+    }, { timeoutMs: 180000, label: 'repo manifest (issues/PR autobase keys) to replicate' })
+    _say('manifest replicated (issues/PR autobase keys present)')
+    const keys = await repo.collabKeys()
+    _say('--- send this to the maintainer (they put it in live-admit.txt) ---')
+    _say(`CONTRIB_BLOB=${Buffer.from(JSON.stringify(keys)).toString('base64')}`)
+    _say('-------------------------------------------------------------------')
+    _say('waiting for the maintainer to admit you (syncCollab)…')
+    const synced = await _waitUntil(async () => {
+      const s = await repo.syncCollab({ timeoutMs: 8000 }).catch(() => ({}))
+      return (s.issues && s.prs) ? s : null
+    }, { timeoutMs: 600000, intervalMs: 2000, label: 'maintainer admission' })
+    _say(`admitted: issues=${synced.issues} prs=${synced.prs}`)
+    const stamp = new Date().toISOString()
+    const issueId = await repo.openIssue({ title: `live-test issue ${stamp}`, body: 'Opened by the contributor over the real network.' })
+    const prId = await repo.openPR({
+      title: `live-test PR ${stamp}`, body: 'fork→PR over the real network',
+      fromRepo: repo.keyHex, fromRef: 'refs/heads/feature', toRef: 'refs/heads/main'
+    })
+    _say(`opened signed issue ${issueId} + PR ${prId} — waiting for maintainer to close + merge…`)
+    await _waitUntil(async () => {
+      const i = await repo.getIssue(issueId).catch(() => null)
+      const p = await repo.getPR(prId).catch(() => null)
+      return (i && i.state === 'closed' && p && p.state === 'merged') ? true : null
+    }, { timeoutMs: 600000, intervalMs: 2000, label: 'maintainer close(issue)+merge(PR)' })
+    _say('')
+    _say('✓ FULL BIDIRECTIONAL FORGE LOOP CONFIRMED ON THE REAL NETWORK')
+    _say(`  issue ${issueId} → CLOSED by maintainer`)
+    _say(`  PR    ${prId} → MERGED by maintainer`)
+    _say('Opengit is a forge. 🎉')
+    await forge.close()
+    process.exit(0)
+  }
+
+  if (role === 'keys') {
+    const repoRef = args[1]
+    if (!repoRef) throw new Error('usage: opengit collab keys <repo>')
+    await withForge(async (forge) => {
+      const repo = await forge.openRepo(resolvePetname('repos', repoRef))
+      await forge.joinRepoTopic(repo, { server: false, client: true })
+      await _waitUntil(async () => {
+        await repo.refresh().catch(() => {})
+        const cr = repo.manifest ? await repo.manifest.get('cores').catch(() => null) : null
+        return cr && cr.value && cr.value.issuesAutobase && cr.value.prsAutobase
+      }, { timeoutMs: 120000, label: 'manifest replicate' })
+      const keys = await repo.collabKeys()
+      process.stdout.write(`CONTRIB_BLOB=${Buffer.from(JSON.stringify(keys)).toString('base64')}\n`)
+    }, { identity: _collabIdentity() })
+    return
+  }
+
+  if (role === 'admit') {
+    const repoRef = args[1]; const blob = args[2]
+    const waitS = parseInt(_collabFlag(args, '--wait', '30'), 10)
+    if (!repoRef || !blob) throw new Error('usage: opengit collab admit <repo> <CONTRIB_BLOB> [--wait N]')
+    const keys = JSON.parse(Buffer.from(blob, 'base64').toString('utf8'))
+    await withForge(async (forge) => {
+      const repo = await forge.openRepo(resolvePetname('repos', repoRef))
+      await forge.joinRepoTopic(repo, { server: true, client: true })
+      await repo.admitCollaborator(keys)
+      _say(`admitted issues=${keys.issues.slice(0, 12)}… prs=${keys.prs.slice(0, 12)}… — staying online ${waitS}s to replicate`)
+      await _sleep(waitS * 1000)
+    }, { identity: _collabIdentity() })
+    return
+  }
+
+  if (role === 'sync') {
+    const repoRef = args[1]
+    const waitS = parseInt(_collabFlag(args, '--wait', '120'), 10)
+    if (!repoRef) throw new Error('usage: opengit collab sync <repo> [--wait N]')
+    await withForge(async (forge) => {
+      const repo = await forge.openRepo(resolvePetname('repos', repoRef))
+      await forge.joinRepoTopic(repo, { server: false, client: true })
+      const s = await _waitUntil(async () => {
+        const r = await repo.syncCollab({ timeoutMs: 8000 }).catch(() => ({}))
+        return (r.issues && r.prs) ? r : null
+      }, { timeoutMs: waitS * 1000, intervalMs: 2000, label: 'maintainer admission' })
+      process.stdout.write(`admitted: issues=${s.issues} prs=${s.prs}\n`)
+    }, { identity: _collabIdentity() })
+    return
+  }
+
+  throw new Error('usage: opengit collab <maintainer|contributor|keys|admit|sync> ...\n' +
+    '  maintainer  [--name <n>|--repo <key>] [--admit-file <path>]   stay online, serve, auto-moderate\n' +
+    '  contributor --repo <key>                                      clone-side full loop, exits 0 on success\n' +
+    '  keys <repo>                                                   print your CONTRIB_BLOB and exit\n' +
+    '  admit <repo> <blob> [--wait N]                                owner: admit a contributor and exit\n' +
+    '  sync <repo> [--wait N]                                        wait until you are admitted, then exit')
+}
+
 async function cmdHelp () {
   process.stdout.write(`opengit — P2P forge CLI
 
@@ -1047,6 +1240,13 @@ Subcommands:
   issue <list|open|comment|close|reopen|show> ...
                                Anyone-can-append issue threads (Autobase).
                                Comments are signed by your identity.
+  collab <maintainer|contributor|keys|admit|sync> ...
+                               Online cross-party forge loop (Stage 4). Unlike
+                               issue/pr (one-shot, local), these stay online and
+                               replicate: collabKeys → admitCollaborator →
+                               syncCollab → signed issues/PRs both ways + owner
+                               close/merge. maintainer/contributor are long-
+                               lived; keys/admit/sync are one-shots.
   pages <publish|url|watch> <repo> [--encrypted] [--debounce-ms N]
                                Render repo HEAD as a static-HTML Hyperdrive
                                browseable from PearBrowser via hyper://<key>/.

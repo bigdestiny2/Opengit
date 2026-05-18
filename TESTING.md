@@ -23,14 +23,16 @@ git clone https://github.com/bigdestiny2/Opengit.git    # Ian: accept the repo i
 cd Opengit
 npm install
 
-# git needs the helper on PATH, named exactly `git-remote-opengit`:
+# Put BOTH binaries on PATH: the git helper (named exactly
+# git-remote-opengit) and the `opengit` CLI.
 mkdir -p ~/.local/bin
 ln -sf "$PWD/packages/git-remote-opengit/bin/git-remote-opengit.js" ~/.local/bin/git-remote-opengit
-chmod +x packages/git-remote-opengit/bin/git-remote-opengit.js
+ln -sf "$PWD/packages/opengit-cli/bin/opengit.js"                    ~/.local/bin/opengit
+chmod +x packages/git-remote-opengit/bin/git-remote-opengit.js packages/opengit-cli/bin/opengit.js
 export PATH="$HOME/.local/bin:$PATH"          # add to your shell rc too
 
 # Identity for this profile (creates + persists one if absent):
-node packages/opengit-cli/bin/opengit.js identity init || true
+opengit identity init || true
 ```
 
 Self-check — confirm your machine reproduces the full flow **in-harness** before
@@ -53,7 +55,7 @@ The never-before-reached milestone. Pure git data path; no forge loop yet.
 **You (maintainer)** — start the persistent node and note the key it prints:
 
 ```bash
-node scripts/live-collab.js maintainer --name opengit
+opengit collab maintainer --name opengit
 #   → REPO_KEY=<52-char z32>      ← copy this; send it to Ian
 #   (stays online; leave this terminal running for ALL stages)
 ```
@@ -96,7 +98,7 @@ The Definition of Done. Keep your Stage-1 maintainer node **running**.
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
-node scripts/live-collab.js contributor --repo <REPO_KEY>
+opengit collab contributor --repo <REPO_KEY>
 #   → prints  CONTRIB_BLOB=<base64>     ← Ian sends this string to you
 #   (then it waits to be admitted; leave it running)
 ```
