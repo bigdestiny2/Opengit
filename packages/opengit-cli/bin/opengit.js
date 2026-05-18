@@ -338,6 +338,7 @@ async function cmdIdentity (args) {
       throw new Error(`identity already exists at ${store.file} (use 'identity reset' to overwrite — destroys everything that depended on it)`)
     }
     const useLegacy = args.includes('--no-mnemonic')
+    const storeMnemonic = args.includes('--store-mnemonic-on-disk')
     let id
     if (useLegacy) {
       id = new OpengitIdentity()
@@ -345,13 +346,16 @@ async function cmdIdentity (args) {
       process.stdout.write(`identity created (legacy, no mnemonic)\n`)
     } else {
       id = await OpengitIdentity.generate()
-      store.save(id)
+      store.save(id, { persistMnemonic: storeMnemonic })
       process.stdout.write(`identity created (hierarchical, mnemonic-rooted)\n`)
     }
     process.stdout.write(`profile: ${PROFILE}\n`)
     process.stdout.write(`pubkey:  ${b4a.toString(id.publicKey, 'hex')}\n`)
     process.stdout.write(`z32:     ${z32.encode(id.publicKey)}\n`)
     process.stdout.write(`stored:  ${store.file} (mode 0600)\n`)
+    if (!useLegacy) {
+      process.stdout.write(`mnemonic on disk: ${storeMnemonic ? 'yes' : 'no'}\n`)
+    }
     if (id.isHierarchical && id.isHierarchical()) {
       process.stdout.write(`\n${'═'.repeat(72)}\n`)
       process.stdout.write(`RECOVERY PHRASE — write these 24 words on paper, store offline:\n`)
@@ -373,19 +377,22 @@ async function cmdIdentity (args) {
     if (store.exists()) {
       throw new Error(`identity already exists at ${store.file} — delete it first or pick a different --profile`)
     }
-    const dashIdx = args.indexOf('--')
-    const phrase = dashIdx >= 0 ? args.slice(dashIdx + 1).join(' ').trim() : ''
+    const storeMnemonic = args.includes('--store-mnemonic-on-disk')
+    const recoverArgs = args.filter(a => a !== '--store-mnemonic-on-disk')
+    const dashIdx = recoverArgs.indexOf('--')
+    const phrase = dashIdx >= 0 ? recoverArgs.slice(dashIdx + 1).join(' ').trim() : ''
     if (!phrase) {
       throw new Error('usage: opengit identity recover -- <24-word mnemonic>')
     }
     const id = await OpengitIdentity.fromMnemonic(phrase)
-    store.save(id)
+    store.save(id, { persistMnemonic: storeMnemonic })
     process.stdout.write(`identity recovered for profile ${PROFILE}\n`)
     process.stdout.write(`device pubkey: ${b4a.toString(id.publicKey, 'hex')}\n`)
     if (id.identityPublicKey) {
       process.stdout.write(`identity root: ${b4a.toString(id.identityPublicKey, 'hex')}\n`)
     }
     process.stdout.write(`stored:        ${store.file} (mode 0600)\n`)
+    process.stdout.write(`mnemonic on disk: ${storeMnemonic ? 'yes' : 'no'}\n`)
     process.stdout.write(`\nNote: device key is fresh — old per-device signatures still verify against\n`)
     process.stdout.write(`their original device keys. v0.1+ chain-verifies via the proof.\n`)
     return
@@ -407,6 +414,8 @@ async function cmdIdentity (args) {
       }
       if (id.mnemonic) {
         process.stdout.write(`mnemonic on disk: yes  (this profile's identity.key holds the phrase)\n`)
+      } else {
+        process.stdout.write(`mnemonic on disk: no   (use your offline recovery phrase for rebuilds)\n`)
       }
     } else {
       process.stdout.write(`hierarchical:   no  (legacy v1 identity; consider 'identity migrate' v0.0.10+)\n`)
@@ -424,8 +433,8 @@ async function cmdIdentity (args) {
   }
 
   throw new Error('usage: opengit identity [show|init|recover|reset]\n' +
-    '       init [--no-mnemonic]              create new identity (default: hierarchical/mnemonic-rooted)\n' +
-    '       recover -- <24 words>             rebuild identity from mnemonic phrase\n' +
+    '       init [--no-mnemonic] [--store-mnemonic-on-disk]\n' +
+    '       recover [--store-mnemonic-on-disk] -- <24 words>\n' +
     '       reset --yes-destroy-everything    delete identity from this profile')
 }
 

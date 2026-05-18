@@ -11,15 +11,18 @@ function topicKey (label) {
   return out
 }
 
-// Private-repo topic derivation (SPEC §5.5).
+// Reserved private-repo topic derivation (SPEC §5.5). Default v0.0.11+
+// replication uses the manifest-key-derived publicRepoTopic for all repos so
+// invited collaborators can cold-bootstrap before they hold the content key.
 //
 // Inputs to the hash are domain-separated and prefixed with the SPEC version,
 // so a future protocol revision is incompatible by design rather than by
 // accident.
 //
-// Only collaborators (those who hold the content key) compute the same
-// private topic. DHT observers seeing the topic-hash on the wire cannot
-// recover the content key from it (preimage resistance of blake2b).
+// If a future second-topic hardening enables this path, only collaborators
+// (those who hold the content key) compute the same private topic. DHT
+// observers seeing the topic-hash on the wire cannot recover the content key
+// from it (preimage resistance of blake2b).
 function privateRepoTopic (contentKey) {
   if (!b4a.isBuffer(contentKey) || contentKey.length !== 32) {
     throw new Error('privateRepoTopic requires a 32-byte content key')

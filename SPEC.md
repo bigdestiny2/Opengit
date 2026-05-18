@@ -119,8 +119,8 @@ corestore
 ├── ns:meta          → Hyperbee   (repo metadata: name, desc, …)     [enc if private]
 ├── ns:meta-keys     → Hyperbee   (PLAINTEXT wrapped content keys per collaborator)
 ├── ns:refs-inputs   → Autobase   (multi-writer ref inputs)          [enc if private]
-├── ns:issues-inputs → Autobase   (issue threads)
-├── ns:prs-inputs    → Autobase   (PR threads + state)
+├── ns:issues-inputs → Autobase   (issue threads)                    [enc if private]
+├── ns:prs-inputs    → Autobase   (PR threads + state)               [enc if private]
 ├── ns:releases      → Hyperdrive (release artifacts)
 ├── ns:pages         → Hyperdrive (static Pages site)
 └── ns:ci            → Autobase   (CI job queue + results)
@@ -139,7 +139,8 @@ The fix: a dedicated **`ns:manifest`** core, **always plaintext** (never AEAD-en
 ```ts
 "spec"        → { value: "opengit/v1", manifestVersion: 1 }
 "visibility"  → "public" | "private"
-"cores"       → { refs, objects, objectIndex, meta, metaKeys }  // hex public keys
+"cores"       → { refs, objects, objectIndex, meta, metaKeys,
+                  issuesAutobase?, prsAutobase? }  // hex public keys
 ```
 
 **Remote-open contract.** Opening a repo by key over the swarm is *eventually consistent*: the manifest core may not have replicated when `openRepo()` returns. The bound cores are therefore provisional. A remote MUST call `repo.refresh()` after joining the swarm + a beat; `refresh()` re-reads the manifest's `cores` record and rebinds the real cores (applying the content key to the encrypted ones if one has since been acquired via `repo.setContentKey()` — the cold-bootstrap path). Idempotent.
@@ -240,10 +241,10 @@ Every repo has a **visibility**: `public` or `private`. Public repos are unencry
 
 ```
 content-key       (32 bytes, generated at private-repo init)
-├── per-block encryption key for every Hypercore in the Corestore
-├── private-topic-secret = HKDF(content-key, "opengit/v1:topic")
-│       ↳ used to derive the swarm topic so DHT observers cannot
-│         enumerate private-repo existence by repo-key alone
+├── per-block encryption key for every encrypted Hypercore in the Corestore
+├── Autobase value-encryption key for private refs/issues/PR collaboration
+├── reserved private-topic-secret = HKDF(content-key, "opengit/v1:topic")
+│       ↳ optional future second topic; not the default replication topic
 └── (v0.0.3+) wrapped per collaborator under their identity public key,
     stored in ns:meta-keys (a sibling Hyperbee)
 ```
@@ -485,10 +486,8 @@ Channel name: `opengit/repo/1`. Messages cenc-encoded.
 Topics are SPEC-version-prefixed so a future protocol revision forms a disjoint network rather than colliding silently with v1 peers.
 
 ```
-"opengit/v1:repo:public:<repo-key-z32>"   → public repo peers (key derives the topic)
-"opengit/v1:repo:private:<shared-secret>" → private repo peers (content-key-derived secret;
-                                            DHT observers cannot enumerate private repos
-                                            by repo-key alone)
+"opengit/v1:repo:public:<repo-key-z32>"   → default repo peers, public and private
+"opengit/v1:repo:private:<shared-secret>" → reserved optional private second topic
 "opengit/v1:user:<identity-key-z32>"      → peers serving an identity feed
 "opengit/v1:mirror"                       → public-repo mirrors announcing themselves
 "opengit/v1:relay:blind"                  → blind (encrypted) relays
@@ -504,7 +503,7 @@ User-visible identifiers (URLs, CLI args, copy-paste) are **z32** (Base32 with n
 
 ### 5.5 Private-topic derivation (v0.0.2, superseded as default by v0.0.11 — see note above)
 
-For private repos, the swarm topic is derived from the **content key** rather than the public repo key, so DHT observers cannot enumerate private-repo existence by guessing repo keys.
+The content-key-derived private topic is reserved for an optional second-topic hardening path. It is not the default replication path in v0.0.11+ because it prevents cold-bootstrap: a freshly invited collaborator has the repo key but not the content key, and must replicate the manifest/meta-keys path to obtain that key.
 
 ```
 private-topic-secret = blake2b(
@@ -525,7 +524,7 @@ sodium.crypto_generichash(out, b4a.concat([
 const privateTopic = out
 ```
 
-Only collaborators (those who hold the content key) compute the same private topic. A blind relay that has been authorized for a private repo must be given the content key (or a topic-only key derivable from it) so it can advertise the topic; this is part of the "authorize a blind relay for a private repo" flow specified in v0.0.3.
+Only collaborators (those who hold the content key) compute the same private topic. Default private-repo replication instead uses the manifest-key-derived repo topic and relies on per-block Hypercore encryption plus Autobase value encryption to keep refs, objects, metadata, issues, and PRs opaque to repo-key holders who lack the content key.
 
 Public-topic derivation remains:
 ```
@@ -726,7 +725,7 @@ For private repos, the repo's Corestore uses a per-repo content key (separate fr
 
 A blind relay:
 - Holds Hypercore blocks it cannot decrypt.
-- Joins a private-derived swarm topic (see §5.5) so DHT observers cannot enumerate private-repo existence by repo-key alone.
+- Pins the manifest, encrypted repo cores, and encrypted collaboration Autobases; the default discovery topic remains manifest-key-derived (see §5.3).
 - Serves availability with no plaintext exposure.
 
 **Reference implementation: HiveRelay (`p2p-hiverelay-client`).** The blind-relay path uses [HiveRelay](https://github.com/bigdestiny2/P2P-Hiverelay)'s SDK directly: we pass our 32-byte content key as the relay's `encryptionKey`, the relay stores opaque encrypted Hypercore blocks across its operator network, peers with the content key connect via Hyperswarm and read normally. HiveRelay is Apache-2.0, runs natively in Bare/Pear, and does not require its operator network — operators can run a HiveRelay node on their own hardware (VPS, Umbrel, RPi) and clients can pubkey-pin them out-of-band.
@@ -811,7 +810,7 @@ $OPENGIT_HOME/
     │   ├── storage/         (Corestore root for this profile)
     │   ├── keys/            (per-repo content keys for private repos)
     │   ├── petnames.json
-    │   └── identity.key     (this profile's identity secret key, when present)
+    │   └── identity.key     (device secret key + proof; recovery phrase is not stored by default)
     ├── work/
     │   ├── ...
     └── pseudonymous/
@@ -845,7 +844,7 @@ Built as a normal Pear app, ships P2P. Updates auto-distribute via Pear's mechan
 - `opengit repo info <key>` → prints meta.
 - `opengit issue list <key>` / `open <key> "<title>"` / `close <key> <id>`.
 - `opengit relay add <relay-key>` → authorizes a pinning relay for a repo.
-- `opengit identity init` → generates identity key.
+- `opengit identity init` → generates identity key and prints the recovery phrase once.
 
 ### 12.3 Web gateway (optional)
 

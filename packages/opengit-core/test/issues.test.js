@@ -11,7 +11,8 @@ let autobaseAvailable = true
 try { require('autobase') } catch { autobaseAvailable = false }
 
 const { OpengitForge, OpengitIdentity } = require('../')
-const { canonicalize, verifySig, threadKey } = require('../lib/issues')
+const { canonicalize, verifySig, validateIssueEvent, threadKey } = require('../lib/issues')
+const { attachDomain, attachIdentityProof } = require('../lib/signed-event')
 
 function tmpdir () {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'opengit-issues-'))
@@ -45,6 +46,55 @@ test('issues.verifySig: round-trip', () => {
   assert.equal(verifySig(payload), true)
   payload.title = 'tampered'
   assert.equal(verifySig(payload), false)
+})
+
+test('issues.verifySig: requires the expected repo/stream domain when provided', () => {
+  const id = new OpengitIdentity()
+  const domain = { spec: 'opengit/v1', repo: 'a'.repeat(64), stream: 'issues' }
+  const payload = attachDomain({
+    type: 'issue.open',
+    issueId: 'abc',
+    by: b4a.toString(id.publicKey, 'hex'),
+    at: 100,
+    title: 'hello',
+    body: ''
+  }, domain)
+  payload.sig = b4a.toString(id.sign(canonicalize(payload)), 'hex')
+
+  assert.equal(verifySig(payload, domain), true)
+  assert.equal(verifySig(payload, { ...domain, repo: 'b'.repeat(64) }), false)
+  assert.equal(verifySig({ ...payload, domain: { ...domain, stream: 'prs' } }, domain), false)
+})
+
+test('issues.verifySig: validates hierarchical device proof when present', async () => {
+  const id = await OpengitIdentity.generate()
+  const payload = attachIdentityProof({
+    type: 'issue.open',
+    issueId: 'abc',
+    by: b4a.toString(id.publicKey, 'hex'),
+    at: 100,
+    title: 'hello',
+    body: ''
+  }, id)
+  payload.sig = b4a.toString(id.sign(canonicalize(payload)), 'hex')
+
+  assert.equal(verifySig(payload), true)
+  assert.equal(verifySig({ ...payload, identity: 'b'.repeat(64) }), false)
+})
+
+test('issues.validateIssueEvent rejects malformed signed event shapes before apply', () => {
+  const id = new OpengitIdentity()
+  const payload = {
+    type: 'issue.open',
+    issueId: 'abc',
+    by: b4a.toString(id.publicKey, 'hex'),
+    at: 'not-a-timestamp',
+    title: 'hello',
+    body: ''
+  }
+  payload.sig = b4a.toString(id.sign(canonicalize(payload)), 'hex')
+  assert.equal(validateIssueEvent(payload), false)
+  assert.doesNotThrow(() => threadKey('abc', 'not-a-timestamp', payload.by))
 })
 
 test('threadKey is sortable lexicographically by time', () => {

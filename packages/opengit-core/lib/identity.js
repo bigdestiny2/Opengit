@@ -139,6 +139,13 @@ class OpengitIdentity {
     return sodium.crypto_sign_verify_detached(signature, message, publicKey)
   }
 
+  static verifyDeviceProof (proof, publicKey, identityPublicKey = null) {
+    const IdentityKey = loadIdentityKey()
+    const opts = { expectedDevice: publicKey }
+    if (identityPublicKey) opts.expectedIdentity = identityPublicKey
+    return IdentityKey.verify(proof, null, opts)
+  }
+
   encode () {
     return z32.encode(this.publicKey)
   }
@@ -149,9 +156,9 @@ class OpengitIdentity {
 
   // Returns true if this identity was rooted in a mnemonic (and therefore
   // has hierarchical recovery available). Used by IdentityStore to decide
-  // whether to persist mnemonic + proof alongside the device keypair.
+  // whether to persist the proof alongside the device keypair.
   isHierarchical () {
-    return this.mnemonic !== null && this.deviceProof !== null
+    return this.deviceProof !== null && this.identityPublicKey !== null
   }
 }
 

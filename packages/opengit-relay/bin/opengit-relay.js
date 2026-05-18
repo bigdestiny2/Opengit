@@ -10,7 +10,7 @@ const OpengitRelay = require('../lib/relay')
 // opengit-relay (v0.0.7) — blind relay daemon for PRIVATE repos.
 //
 // Default path: native Hyperswarm Corestore replication. Apache-2.0,
-// no AGPL deps. The relay joins the repo's private-derived swarm topic
+// no AGPL deps. The relay joins the repo's manifest-key-derived swarm topic
 // as a server and replicates ciphertext blocks to peers.
 //
 // Operator decides per-repo whether they hold the content key (self-relay

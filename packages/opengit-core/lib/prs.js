@@ -2,8 +2,22 @@
 
 const Hyperbee = require('hyperbee')
 const b4a = require('b4a')
+const crypto = require('crypto')
 
-const OpengitIdentity = require('./identity')
+const {
+  MAX_ID,
+  MAX_REF,
+  MAX_TITLE,
+  MAX_BODY,
+  canonicalize,
+  attachDomain,
+  attachIdentityProof,
+  isHex,
+  isSafeTimestamp,
+  isSafeString,
+  validSignedShape,
+  verifySig: verifySignedEvent
+} = require('./signed-event')
 
 // Pull requests (SPEC §6.2) — Autobase-backed thread system.
 //
@@ -38,9 +52,10 @@ const OpengitIdentity = require('./identity')
 //   • pr.close / pr.reopen: openedBy or moderator.
 
 class PRs {
-  constructor (autobase) {
+  constructor (autobase, opts = {}) {
     if (!autobase) throw new Error('autobase instance required')
     this.base = autobase
+    this.domain = opts.domain || null
     this._opened = false
   }
 
@@ -96,6 +111,16 @@ class PRs {
 
   // ── Convenience: build & sign + append ───────────────────────────────────
 
+  _sign (payload, identity) {
+    attachIdentityProof(payload, identity)
+    attachDomain(payload, this.domain)
+    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    if (!validatePREvent(payload, this.domain)) {
+      throw new Error(`invalid PR event: ${payload.type || 'unknown'}`)
+    }
+    return payload
+  }
+
   async openPR ({ prId = null, title, body = '', fromRepo, fromRef, toRef, identity }) {
     if (!identity) throw new Error('openPR requires an identity')
     if (!title) throw new Error('openPR requires a title')
@@ -112,7 +137,7 @@ class PRs {
       fromRef: String(fromRef),
       toRef: String(toRef)
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     await this.append(payload)
     return id
   }
@@ -128,7 +153,7 @@ class PRs {
       body,
       parentId: parentId || null
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -145,7 +170,7 @@ class PRs {
       verdict,
       body
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -159,7 +184,7 @@ class PRs {
       fromRef,
       lastCommitOid
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -176,7 +201,7 @@ class PRs {
       mergeOid,
       strategy
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -189,7 +214,7 @@ class PRs {
       at: Date.now(),
       reason
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -202,7 +227,7 @@ class PRs {
       at: Date.now(),
       reason
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -221,34 +246,61 @@ class PRs {
       by: b4a.toString(identity.publicKey, 'hex'),
       at: Date.now()
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 }
 
 // ── Apply / open ────────────────────────────────────────────────────────────
 
-function canonicalize (payload) {
-  const sorted = {}
-  for (const k of Object.keys(payload).sort()) {
-    if (k === 'sig') continue
-    sorted[k] = payload[k]
+function verifySig (value, expectedDomain = null) {
+  return verifySignedEvent(value, expectedDomain)
+}
+
+function validatePREvent (v, expectedDomain = null) {
+  if (!validSignedShape(v, expectedDomain)) return false
+
+  if (v.type === 'writer.add') {
+    return isHex(v.writerKey, 32)
   }
-  return b4a.from(JSON.stringify(sorted))
+
+  if (!isSafeString(v.prId, { min: 1, max: MAX_ID })) return false
+
+  if (v.type === 'pr.open') {
+    return isSafeString(v.title, { min: 1, max: MAX_TITLE }) &&
+      isSafeString(v.body || '', { max: MAX_BODY }) &&
+      isHex(v.fromRepo, 32) &&
+      isSafeString(v.fromRef, { min: 1, max: MAX_REF }) &&
+      isSafeString(v.toRef, { min: 1, max: MAX_REF })
+  }
+
+  if (v.type === 'pr.comment') {
+    return isSafeString(v.body || '', { max: MAX_BODY }) &&
+      (v.parentId === null || v.parentId === undefined || isSafeString(v.parentId, { min: 1, max: MAX_ID }))
+  }
+
+  if (v.type === 'pr.review') {
+    return ['approve', 'request-changes', 'comment'].includes(v.verdict) &&
+      isSafeString(v.body || '', { max: MAX_BODY })
+  }
+
+  if (v.type === 'pr.update') {
+    return isSafeString(v.fromRef, { min: 1, max: MAX_REF }) &&
+      (v.lastCommitOid === null || v.lastCommitOid === undefined || isHex(v.lastCommitOid, 20))
+  }
+
+  if (v.type === 'pr.merge') {
+    return isHex(v.mergeOid, 20) && ['merge', 'squash', 'rebase'].includes(v.strategy)
+  }
+
+  if (v.type === 'pr.close' || v.type === 'pr.reopen') {
+    return isSafeString(v.reason || '', { max: MAX_BODY })
+  }
+
+  return false
 }
 
-function verifySig (value) {
-  if (!value || !value.by || !value.sig) return false
-  let pub
-  try { pub = b4a.from(value.by, 'hex') } catch { return false }
-  if (pub.length !== 32) return false
-  let sig
-  try { sig = b4a.from(value.sig, 'hex') } catch { return false }
-  if (sig.length !== 64) return false
-  return OpengitIdentity.verify(sig, canonicalize(value), pub)
-}
-
-function makeApply (bootstrap) {
+function makeApply (bootstrap, expectedDomain = null) {
   const moderators = new Set([
     ...(bootstrap.moderators || []),
     ...(bootstrap.owners || [])
@@ -258,7 +310,8 @@ function makeApply (bootstrap) {
     for (const node of nodes) {
       const v = node.value
       if (!v || typeof v !== 'object') continue
-      if (!verifySig(v)) continue
+      if (!validatePREvent(v, expectedDomain)) continue
+      if (!verifySig(v, expectedDomain)) continue
 
       const by = v.by.toLowerCase()
       const isModerator = moderators.has(by)
@@ -380,7 +433,7 @@ function makeApply (bootstrap) {
 }
 
 function threadKey (prId, at, by) {
-  const ts = at.toString(16).padStart(16, '0')
+  const ts = (isSafeTimestamp(at) ? at : 0).toString(16).padStart(16, '0')
   return `${prId}/${ts}/${by}`
 }
 
@@ -398,9 +451,10 @@ function makeOpen () {
 
 function randomId () {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  const bytes = crypto.randomBytes(10)
   let id = 'pr-'
-  for (let i = 0; i < 10; i++) id += chars[Math.floor(Math.random() * chars.length)]
+  for (let i = 0; i < 10; i++) id += chars[bytes[i] % chars.length]
   return id
 }
 
-module.exports = { PRs, makeApply, makeOpen, canonicalize, verifySig, threadKey }
+module.exports = { PRs, makeApply, makeOpen, canonicalize, verifySig, validatePREvent, threadKey }

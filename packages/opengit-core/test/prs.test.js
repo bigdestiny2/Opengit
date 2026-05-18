@@ -8,7 +8,8 @@ const fs = require('node:fs')
 const b4a = require('b4a')
 
 const { OpengitForge, OpengitIdentity } = require('../')
-const { canonicalize, verifySig, threadKey } = require('../lib/prs')
+const { canonicalize, verifySig, validatePREvent, threadKey } = require('../lib/prs')
+const { attachDomain } = require('../lib/signed-event')
 
 function tmpdir () {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'opengit-prs-'))
@@ -37,6 +38,40 @@ test('prs.verifySig: ed25519 round-trip + tamper detection', () => {
   assert.equal(verifySig(payload), true)
   payload.title = 'Tampered'
   assert.equal(verifySig(payload), false)
+})
+
+test('prs.verifySig: rejects replay into another repo domain', () => {
+  const id = new OpengitIdentity()
+  const domain = { spec: 'opengit/v1', repo: 'a'.repeat(64), stream: 'prs' }
+  const payload = attachDomain({
+    type: 'pr.open',
+    prId: 'pr-123',
+    by: b4a.toString(id.publicKey, 'hex'),
+    at: 1234,
+    title: 'Hello',
+    body: '',
+    fromRepo: 'a'.repeat(64),
+    fromRef: 'refs/heads/feature',
+    toRef: 'refs/heads/main'
+  }, domain)
+  payload.sig = b4a.toString(id.sign(canonicalize(payload)), 'hex')
+
+  assert.equal(verifySig(payload, domain), true)
+  assert.equal(verifySig(payload, { ...domain, repo: 'b'.repeat(64) }), false)
+})
+
+test('prs.validatePREvent rejects unsafe fields before apply', () => {
+  const id = new OpengitIdentity()
+  const payload = {
+    type: 'pr.merge',
+    prId: 'pr-123',
+    by: b4a.toString(id.publicKey, 'hex'),
+    at: 1234,
+    mergeOid: 'not-a-commit',
+    strategy: 'merge'
+  }
+  payload.sig = b4a.toString(id.sign(canonicalize(payload)), 'hex')
+  assert.equal(validatePREvent(payload), false)
 })
 
 test('threadKey is sortable lexicographically', () => {

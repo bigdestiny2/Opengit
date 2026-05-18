@@ -10,8 +10,8 @@ const { OpengitForge, Keyring, profile } = require('opengit-core')
 //
 //   The DEFAULT path replicates a repo's Corestore via native Hyperswarm.
 //   The relay holds the discovery key and content key (or only the
-//   discovery key, in true-blind mode), joins the private-derived swarm
-//   topic as a server, and serves ciphertext blocks. Collaborators with
+//   discovery key, in true-blind mode), joins the manifest-key-derived
+//   repo topic as a server, and serves ciphertext blocks. Collaborators with
 //   the content key fetch and decrypt normally. No HiveRelay dependency
 //   required for this path.
 //

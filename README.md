@@ -11,7 +11,7 @@ when the owner is offline via mirrors / blind relays.
 > machine, replicated over the real Hyperswarm DHT** to the repo owner, who
 > closed and merged them — Opengit's own repository as the payload (dogfood).
 > See [`STAGE-4-LIVE-RESULT.md`](STAGE-4-LIVE-RESULT.md).
-> Test suite: **119 passing / 0 failing / 4 documented skips**; in-harness
+> Test suite: **131 passing / 0 failing / 4 documented skips**; in-harness
 > rehearsals green (`dry-run-collab` 9/9, `dry-run-fork-push` 11/11,
 > `preflight-relay` 12/12).
 
@@ -30,11 +30,13 @@ when the owner is offline via mirrors / blind relays.
   with the real repo, 11/11.)*
 - **Private repos** — per-block AEAD encryption; collaborators recover the
   content key over the swarm from only their identity + the repo key
-  (cold-bootstrap).
+  (cold-bootstrap). Issues, PRs, and multi-writer ref inputs are encrypted
+  under the same content key.
 - **Owner-offline availability** — blind-peer / HiveRelay pinning so the repo
   stays cloneable with the owner's laptop closed (wiring proven; the
   real-relay run is operator-side — see the Roadmap).
-- **Identity** — 24-word mnemonic-rooted (`keet-identity-key`); device subkeys.
+- **Identity** — 24-word mnemonic-rooted (`keet-identity-key`); device subkeys;
+  recovery phrases are printed once and not stored on disk by default.
 - **Browsable** — render a repo to a static site for PearBrowser / any browser
   (`opengit-pages`).
 

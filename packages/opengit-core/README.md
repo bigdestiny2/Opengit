@@ -16,14 +16,15 @@ const {
 
 - **Corestore is the source of truth.** A repo is a set of named Hypercores
   (`manifest`, `refs`, `objects`, `objectIndex`, `meta`, `metaKeys`) plus
-  per-repo **issues** and **PRs** Autobases.
+  per-repo **issues** and **PRs** Autobases. Private repos encrypt refs,
+  objects, metadata, and collaboration Autobase values with the content key.
 - **The plaintext `manifest` core's key is the repo address** (`opengit://`).
   It lists every other core + collaboration authority, so private repos
   cold-bootstrap without a catch-22.
 - **`ShadowRepo`** bridges to real `git`: regenerate a bare `.git`, let
   `git upload-pack`/`receive-pack` work, sync back.
-- Issues/PRs are **Ed25519-signed Autobase entries**; each Autobase gets its
-  own Corestore namespace (don't share the raw store — see ARCHITECTURE).
+- Issues/PRs are **Ed25519-signed Autobase entries** with repo/stream domain
+  separation; each Autobase gets its own Corestore namespace.
 
 ## Minimal example
 

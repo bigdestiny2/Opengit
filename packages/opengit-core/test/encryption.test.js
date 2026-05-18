@@ -7,7 +7,7 @@ const os = require('node:os')
 const fs = require('node:fs')
 const b4a = require('b4a')
 
-const { OpengitForge, Keyring } = require('../')
+const { OpengitForge, OpengitIdentity, Keyring } = require('../')
 
 function tmpdir () {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'opengit-enc-'))
@@ -30,6 +30,29 @@ test('private repo: writes & reads through with content key', async () => {
 
   const meta = await repo.getMeta()
   assert.equal(meta.visibility, 'private')
+
+  await forge.close()
+})
+
+test('private repo: collaboration Autobases are encrypted with the content key', async () => {
+  const dir = tmpdir()
+  const forge = new OpengitForge({
+    storage: dir,
+    profileName: 'enc-collab',
+    identity: new OpengitIdentity()
+  })
+  await forge.ready()
+
+  const repo = await forge.createRepo('secret-collab', {
+    visibility: 'private',
+    multiwriter: true
+  })
+  await repo._openIssues()
+  await repo._openPRs()
+
+  assert.equal(repo._refsBase.encrypted, true)
+  assert.equal(repo._issuesBase.encrypted, true)
+  assert.equal(repo._prsBase.encrypted, true)
 
   await forge.close()
 })
