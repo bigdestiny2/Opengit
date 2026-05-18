@@ -171,8 +171,18 @@ async function cmdInfo (args) {
 }
 
 async function cmdServe (args) {
-  const ref = args[0]
-  if (!ref) throw new Error('usage: opengit serve <key|petname|local-name>')
+  // `opengit serve <repo> [--mirror <blind-peer-pubkey> ...]`
+  // --mirror: also ask the given blind-peer server(s) to PIN this repo's
+  // cores (Stage 5.2 — owner-offline availability). You operate the relay;
+  // pass the blind-peer pubkey it prints (`blind-peer-cli`). Repeatable.
+  const mirrors = []
+  const pos = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--mirror' && i + 1 < args.length) mirrors.push(args[++i])
+    else pos.push(args[i])
+  }
+  const ref = pos[0]
+  if (!ref) throw new Error('usage: opengit serve <key|petname|local-name> [--mirror <blind-peer-pubkey> ...]')
   const forge = new OpengitForge({
     storage: STORAGE_DIR,
     bootstrap: BOOTSTRAP,
@@ -192,6 +202,16 @@ async function cmdServe (args) {
   await forge.joinRepoTopic(repo, { server: true, client: true })
   process.stdout.write(`profile: ${PROFILE}\n`)
   process.stdout.write(`serving opengit://${repo.keyZ32} (${repo.visibility})\n`)
+  if (mirrors.length) {
+    try {
+      forge.setBlindPeerMirrors(mirrors)
+      const res = await forge.requestBlindPin(repo, { wait: true, replicas: mirrors.length })
+      process.stdout.write(`blind-pin requested from ${mirrors.length} mirror(s): pinned ${(res.cores || []).filter(Boolean).length} cores\n`)
+      process.stdout.write('owner-offline availability: this repo stays cloneable while you are offline (verify per TESTING.md §5.2)\n')
+    } catch (err) {
+      process.stdout.write(`WARNING: blind-pin failed (${err.message}). Serving continues without owner-offline pinning.\n`)
+    }
+  }
   process.stdout.write('press ctrl-c to stop\n')
   await new Promise(() => {})
 }
@@ -1209,7 +1229,12 @@ Subcommands:
   info <key|petname>           Show repo metadata.
   list-refs <key|petname|name> List refs.
   set-ref <name> <ref> <oid>   Set a ref (writable repos only).
-  serve <key|petname|name>     Run a foreground swarm server for a repo.
+  serve <key|petname|name> [--mirror <blind-peer-pubkey> ...]
+                               Run a foreground swarm server for a repo.
+                               --mirror: also ask that blind-peer server to
+                               PIN this repo (Stage 5.2 owner-offline
+                               availability). Repeatable. You operate the
+                               relay; pass the pubkey blind-peer-cli prints.
   profiles [list|path <name>]  Manage profiles.
   petname [list|add|remove|resolve]
                                Manage local petnames (alice -> pubkey).

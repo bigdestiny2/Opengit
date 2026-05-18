@@ -8,8 +8,8 @@
 
 ## Roles
 
-- **You** — repo owner. Runs Stage 0 solo, then drives the live session.
-- **Ian (iainkek)** — second machine + HiveRelay operator. His access to the live foundation relays (`relay-us`, `relay-sg`) and operator knowledge is what de-risks Stage 3. His live time is valuable → Stage 0 must be airtight first.
+- **You** — repo owner **and the HiveRelay/relay operator**. Run Stage 0 solo, drive the live session, and operate the relay that de-risks Stage 3 + powers Stage 5.2 (owner-offline availability). Relay operator knowledge + access (`relay-us`/`relay-sg` or a relay you run) is **yours**, not a dependency on Ian.
+- **Ian (iainkek)** — second machine + code contributor only. Provides the real cross-machine/cross-NAT network and the contributor side of the forge loop. No relay-operator responsibility. His live time is valuable → Stage 0 must be airtight first.
 
 ---
 
@@ -59,12 +59,12 @@ Env both sides: default bootstrap (public Holepunch DHT). Keep `OPENGIT_BOOTSTRA
 
 Both behind home NAT, different networks. Tests Hyperswarm UDX holepunch for real. Failure here is *expected for bad NAT pairs*, not a bug → go to Stage 3, don't debug live.
 
-## Stage 3 — HiveRelay-backed availability (Ian's home turf)
+## Stage 3 — HiveRelay-backed availability (YOUR home turf)
 
-Because Ian runs HiveRelay, this is the de-risked path:
-- Use the **live foundation relays** (`relay-us.p2phiverelay.xyz`, `relay-sg.p2phiverelay.xyz`, verified live earlier) via `forge.setBlindPeerMirrors([...])` / `opengit-relay --use-hiverelay`, OR Ian points a relay he operates at the repo.
-- This bridges NAT **and** makes the owner-offline case work: you close your laptop, Ian still clones/pulls.
-- Ian can operator-debug the relay side in real time — a capability we do not have solo.
+You operate the relay, so this is the de-risked path **and you control it end-to-end**:
+- Use the **live foundation relays** (`relay-us.p2phiverelay.xyz`, `relay-sg.p2phiverelay.xyz`, verified live earlier) via `forge.setBlindPeerMirrors([...])` / `opengit-relay --use-hiverelay`, OR point a relay **you** operate at the repo.
+- This bridges NAT **and** makes the owner-offline case work: you close your laptop, Ian still clones/pulls (Stage 5.2 is the dedicated proof of this).
+- **You** operator-debug the relay side in real time — a capability fully under your control, not a live-session dependency on Ian.
 
 ## Stage 4 — Real collaboration on Opengit itself
 
@@ -85,7 +85,7 @@ Pipe proven → run the full forge loop on the real repo (now fully rehearsed in
 | `git clone` hangs | Helper distinguishes "no peers" (exit 3) vs "empty repo" (exit 0). Check exit code first. |
 | Holepunch fails (Stage 2) | Do not debug NAT live → jump to Stage 3 relay. |
 | Owner laptop sleeps | Expected; it's why Stage 3 exists. |
-| Real DHT won't bootstrap | `OPENGIT_BOOTSTRAP` → a known-good node (Ian can supply a HiveRelay bootstrap). |
+| Real DHT won't bootstrap | `OPENGIT_BOOTSTRAP` → a known-good node (you supply it — your HiveRelay/relay bootstrap). |
 | Manifest/refs don't replicate | Remote contract: `repo.refresh()` after swarm settles (v0.0.11). Helper should do this; verify. |
 | Private cold-bootstrap stalls | Confirm manifest core (plaintext) replicated before meta-keys; that ordering is the v0.0.11 fix. |
 
@@ -101,13 +101,13 @@ A change Ian makes on his machine lands in your repo on yours — over the real 
 
 **Blockers (proven-state, not aspiration):**
 1. **Bidirectional code push — the big one.** Proven today: *single-writer* — owner pushes via the manifest `ns:refs` Hyperbee, contributor **clones**. **Not proven:** a contributor pushing real git objects that land in the canonical repo. The multi-writer refs Autobase is still the pre-fix **isolated silo** shape (`bootstrap=null`, key never published in the manifest) — the exact bug class already fixed for issues/PRs. Two viable paths, pick one and prove it: (a) apply the same proven manifest pattern (publish refs-autobase key + `admit`/`sync` writer handshake) to multi-writer refs; or (b) **fork→fetch→merge** — owner `git fetch`es the contributor's own `opengit://` fork and merges locally (no multi-writer needed; simpler; likely the right first cut). Until one is dry-run + live proven, collaborative *building* on Opengit cannot fully replace GitHub.
-2. **Always-on availability.** GitHub is 24/7; P2P needs a persistent node so Ian can push while you sleep. Stage 3 / HiveRelay (Ian's turf): a blind-peer/relay pinning the canonical repo cores. Required for *async* dogfood; "both online" suffices only for the live test.
+2. **Always-on availability.** GitHub is 24/7; P2P needs a persistent node so Ian can push while you sleep. Stage 3 / HiveRelay (**your turf** — you operate the relay): a blind-peer/relay pinning the canonical repo cores. Required for *async* dogfood; "both online" suffices only for the live test.
 3. **Daily-use ergonomics.** One-shot `opengit issue`/`pr` are local-only; `opengit collab` is a coordinated-session model. Daily dogfood wants `opengit issue open` to "just work" → an **`opengit daemon`** (owns the Corestore, stays online, serves one-shot CLI clients + git + relay). Also: ongoing `git push opengit://` (not just initial), branch workflow, conflict handling.
 4. **Trust handoff.** Exchange the canonical `opengit://<key>` (+ private content-key handshake) out-of-band **once**; thereafter GitHub is redundant. Keep GitHub as a frozen read-only fallback until N green Opengit-only cycles.
 
 **Cutover sequence (each gated like the live test — one variable, dry-run before live):**
 - **5.1 — ✅ DONE (dry-run-proven in-harness).** `scripts/dry-run-fork-push.js` green **11/11** with the real Opengit repo: Bob clones Alice's repo → makes a real code change on a branch → creates his **own** `opengit://` fork and `git push`es it through the real helper (single-writer, the proven primitive) → opens a signed cross-party PR → Alice replicates Bob's fork, `git fetch`es it, `git merge --no-ff` (real merge commit), `git push`es the merge to the canonical repo → a **fresh** clone proves Bob's change (new file + edited tracked file) landed canonically, a merge commit exists, Bob's commit object is reachable, and the original 104-file payload is byte-intact. **No multi-writer, no GitHub.** Integration bug caught + fixed: `RepoIndex` resolves home from the *global* `OPENGIT_HOME` (not per-forge), so a two-actor (Alice+Bob, two homes) flow needs `OPENGIT_HOME` pinned to each forge's home before its first repo op — same bug class as Stage-0.1 #2/#6; would have broken the live self-host on the contributor's first push.
-- **5.2** Stand up an **always-on HiveRelay-backed Opengit node** pinning the canonical repo; verify owner-offline clone + pull + push.
+- **5.2** Stand up an **always-on HiveRelay-backed Opengit node** pinning the canonical repo; verify owner-offline clone + pull + push. *Wiring preflight DONE solo (`scripts/preflight-relay.js` 12/12) + CLI enabler shipped (`opengit serve <repo> --mirror <blind-peer-pubkey>`); the owner-offline round-trip itself is **your** real-relay run — `TESTING.md` §5.2 (can't be harness-proven: documented blind-peer-muxer skip; you operate the relay).*
 - **5.3** **Mirror cutover:** publish canonical to `opengit://`; GitHub → read-only mirror. Run one full real work cycle (issue → contributor branch push → PR → review → owner merge) entirely on Opengit, both devs.
 - **5.4** **GitHub-free:** after N green cycles, stop pushing to GitHub; Opengit is source of truth; `opengit daemon` for ergonomics.
 
@@ -132,5 +132,8 @@ A change Ian makes on his machine lands in your repo on yours — over the real 
 - [x] **Live harness shipped + locally E2E-proven.** Private repo `github.com/bigdestiny2/Opengit` (Ian = `iainkek` invited, write). `TESTING.md` = agent-runnable runbook (Stage 0 self-check → Stage 1 `git clone opengit://` → Stage 4 forge loop). Verified by a faithful two-OS-process E2E over a SwarmFixture (cross-process rendezvous confirmed YES): full bidirectional loop — admit → signed issue+PR → owner close+merge → contributor exits 0 — in ~7 s.
 - [x] **CLI-native (Stage 4 is now plain `opengit`).** The proven driver was promoted into the CLI: `opengit collab <maintainer|contributor|keys|admit|sync>` (long-lived maintainer/contributor + one-shot keys/admit/sync), backed by the exact verified v0.0.12 API (collabKeys/admitCollaborator/syncCollab). Re-verified end-to-end **through the CLI** (two real OS processes over SwarmFixture, pipe stdio): maintainer key → contributor blob → file admit → signed issue+PR → owner auto close+merge → contributor exits 0, ~8 s. `TESTING.md` updated to `opengit collab …`; `scripts/live-collab.js` retained as the equivalent standalone. Note: one-shot `opengit issue`/`pr` remain local-only (no swarm presence) — cross-party forge ops go through `opengit collab`; a unified online `issue`/`pr` (or an `opengit daemon`) is the documented post-live-test follow-up.
 - [x] **Stage 5.1 — DONE (dry-run-proven, solo, in-harness).** `scripts/dry-run-fork-push.js` green 11/11 with the real Opengit repo: contributor code lands canonically via fork→fetch→merge, no multi-writer, no GitHub. The critical-path blocker for self-hosting the build is cleared in-harness. One integration bug found+fixed (global `OPENGIT_HOME`/RepoIndex coupling in the two-actor flow).
-- [ ] Stage 1 — **ready to schedule with Ian** (real public DHT — the authoritative cross-process validation). The git-data path AND the full bidirectional forge loop are both proven in-harness against the real Opengit repo; the only remaining unproven variable is the subprocess-over-real-DHT discovery hop, which is precisely Stage 1's job (one new variable, per the cardinal rule). Stages 1–4 can now run as one airtight session via `TESTING.md`.
-- [ ] Stage 5.2+ — self-host cutover (always-on HiveRelay node → mirror cutover → GitHub-free). Gated post-live-test; 5.1 (the hard part) already proven.
+- [x] 🎉 **STAGE 4 — PASSED LIVE, TWO MACHINES, REAL NETWORK (2026-05-18).** The milestone Opengit had never reached. Maintainer = `Locals-Mac-Studio`, profile `default`, `REPO_KEY=nibsqgk71owjouyyeeoyfd6yt7f9jcj88tq55ozwe76t4ctiifby` (online 08:39:56). Ian (separate machine) ran the contributor role and sent his `CONTRIB_BLOB` (`issues=d286498f… prs=12bb22ac…`); admitted on the owner machine via `live-admit.txt`. Maintainer log: `08:55:39 ADMITTED contributor` — the v0.0.12 `collabKeys`/`admitCollaborator`/`syncCollab` handshake completed **over the real Hyperswarm DHT between two physical machines**; `08:55:45 CLOSED contributor issue 7x7xzg8fk0q7` — Ian's **signed issue** replicated machine→machine, owner closed it; `08:55:45 MERGED contributor PR pr-hr1xbgi280` — Ian's **signed PR** replicated, owner merged it. Forge loop ran in ~6 s once admitted. **Definition of Done met.** Full evidence: `STAGE-4-LIVE-RESULT.md`.
+- [ ] **Stage 1 (`git clone opengit://` over the real DHT) — confirm/record.** Stage 4 proves the collaboration + replication path live; the standalone git-data clone hop is a separate tick. Have Ian run `git clone opengit://nibsqgk71owjouyyeeoyfd6yt7f9jcj88tq55ozwe76t4ctiifby dest` and diff vs known-good (or note if already done) to fully close the git half of the Definition of Done.
+- [x] **Role correction.** You are the **HiveRelay/relay operator** (not Ian). Plan reframed: Stage 3 + 5.2 are your turf; Ian = second machine + code contributor only.
+- [x] **Stage 5.2 wiring preflight — DONE (solo, 12/12).** `scripts/preflight-relay.js`: `setBlindPeerMirrors` validation, no-mirrors guard, client construction, `requestBlindPin` pins exactly the 5 repo cores, AGPL-path guards, `p2p-hiverelay-client` resolvable, `known-relays` surface (+ the honest finding: descriptors are HTTPS/WSS, the blind-peer **pubkey is operator-supplied**), `opengit-relay --use-hiverelay`/license boundary. CLI enabler shipped: `opengit serve <repo> --mirror <pubkey>`. The owner-offline round-trip is **your real-relay run** (`TESTING.md` §5.2).
+- [ ] Stage 5.2 real-relay run (owner-offline clone via your relay, ×2) → then 5.3 mirror cutover → 5.4 GitHub-free. The hard protocol parts (5.1 code push, 5.2 wiring) are proven; what remains is operational and yours to run.

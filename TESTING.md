@@ -145,6 +145,70 @@ Optional (private-repo cold-bootstrap, `LIVE-TEST-PLAN.md` §Stage 4): repeat wi
 
 ---
 
+## Stage 5.2 — owner-offline availability via YOUR relay (self-host)
+
+The dogfood blocker after 5.1: the repo must stay cloneable **while your
+laptop is closed** — that's what makes GitHub-free async collaboration real.
+You operate the relay, so this is yours to run end-to-end. (In-harness can't
+prove this — single-node fixtures can't holepunch the blind-peer muxer; it's
+a documented skip. The authoritative proof is this real-relay run.)
+
+**0. Solo wiring preflight (before touching real infra — catches config bugs):**
+
+```bash
+node scripts/preflight-relay.js     # expect: PREFLIGHT PASSED — 12/12
+```
+
+**1. Run your blind-peer server (operator side — you).** Either point at a
+HiveRelay you operate, or run the standalone pinning server:
+
+```bash
+npx blind-peer-cli            # prints its public key — copy it: BP_PUBKEY
+#   (or: opengit-relay --use-hiverelay  → AGPL-3.0 path, for the private variant)
+```
+
+The foundation relay descriptors in `known-relays.js` are HTTPS/WSS endpoints
+and do **not** carry a blind-peer pubkey — `setBlindPeerMirrors` needs the
+pubkey, which you supply as the operator (the preflight calls this out).
+
+**2. Owner: serve the repo AND ask your relay to pin it:**
+
+```bash
+opengit serve opengit --mirror <BP_PUBKEY>
+#   → serving opengit://<KEY> (public)
+#   → blind-pin requested from 1 mirror(s): pinned 5 cores
+#   Leave it long enough for the pin to settle (~30–60s), then…
+```
+
+**3. Owner goes OFFLINE** — Ctrl-C that `serve`, close the laptop. The repo
+is now served by **only** your relay, no owner.
+
+**4. Fresh machine/profile (or Ian), owner offline — clone must still work:**
+
+```bash
+OPENGIT_PROFILE=fresh git clone opengit://<KEY> offline-clone
+cd offline-clone && git log --oneline -1 && ls SPEC.md
+#   (If your relay isn't on the public DHT path, both sides:
+#    export OPENGIT_BOOTSTRAP="<your-relay-host:port>")
+```
+
+✅ **Stage 5.2 passes** when the clone succeeds with the owner offline and the
+tree is byte-correct. That is owner-offline availability over your own relay —
+**the last technical blocker to dropping GitHub.** Reproduce **twice** (plan
+§Self-host Definition of done).
+
+**Private variant** (cold-bootstrap, AGPL path): `opengit init --private foo`;
+`opengit blind-publish foo --source <dir>` (this is the `--use-hiverelay`
+AGPL-3.0 path); owner offline; a fresh peer with only its identity + the repo
+key recovers the content key over the relay and clones.
+
+**If it fails:** preflight green but clone hangs offline → the pin didn't
+settle (wait longer at step 2) **or** `BP_PUBKEY` is wrong **or** the relay
+isn't reachable from the cloner (set `OPENGIT_BOOTSTRAP`). You operate the
+relay — check its logs directly.
+
+---
+
 ## Knobs / env (identical meaning on both machines)
 
 | Var | Default | Use |
