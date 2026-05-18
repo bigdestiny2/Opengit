@@ -467,17 +467,36 @@ class OpengitForge {
     }
 
     if (target && target.constructor && target.constructor.name === 'OpengitRepo') {
-      // Pin the repo's refs core (and let blind-peering's wakeup propagate
-      // to the rest via the `referrer` option in a future revision).
-      const cores = [target._refsCore, target._metaCore, target._metaKeysCore, target._objectsCore, target._objectIndexCore]
+      // Pin every published repo surface. The manifest is the discovery
+      // anchor, and the collaboration Autobases carry issues/PRs/refs.
+      try { await target.ready() } catch {}
+      try { await target._openIssues() } catch {}
+      try { await target._openPRs() } catch {}
+
+      const cores = [
+        target._manifestCore,
+        target._refsCore,
+        target._metaCore,
+        target._metaKeysCore,
+        target._objectsCore,
+        target._objectIndexCore
+      ]
+      const autobases = [target._refsBase, target._issuesBase, target._prsBase]
       const out = []
+      const bases = []
       for (const c of cores) {
         if (!c) continue
         if (wait) await client.addCore(c, peerOpts)
         else client.addCoreBackground(c, peerOpts)
         out.push(c.key && c.key.toString('hex'))
       }
-      return { kind: 'repo', cores: out }
+      for (const base of autobases) {
+        if (!base) continue
+        if (wait) await client.addAutobase(base, peerOpts)
+        else client.addAutobaseBackground(base, peerOpts)
+        bases.push(base.key && base.key.toString('hex'))
+      }
+      return { kind: 'repo', cores: out, autobases: bases }
     }
 
     // Raw Hypercore.

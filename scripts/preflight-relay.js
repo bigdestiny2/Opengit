@@ -71,21 +71,27 @@ async function main () {
       forge._blindClient = null
     } catch (e) { bad(`client construction threw: ${e.message}`) }
 
-    // 4. requestBlindPin selects EXACTLY the repo's pinnable cores. This is
+    // 4. requestBlindPin selects the repo's pinnable cores and Autobases. This is
     //    the wiring that, if wrong, makes a real relay pin nothing/wrong.
     //    Inject a stub client so we assert core-selection without a server.
     const pinned = []
+    const pinnedBases = []
     forge._blindClient = {
       async addCore (c) { pinned.push(c.key && c.key.toString('hex')) },
       addCoreBackground (c) { pinned.push(c.key && c.key.toString('hex')) },
-      async addAutobase () {}, addAutobaseBackground () {}, setKeys () {}, async close () {}
+      async addAutobase (base) { pinnedBases.push(base.key && base.key.toString('hex')) },
+      addAutobaseBackground (base) { pinnedBases.push(base.key && base.key.toString('hex')) },
+      setKeys () {},
+      async close () {}
     }
     const repo = await forge.createRepo('preflight-pub') // public
     const res = await forge.requestBlindPin(repo, { wait: true })
-    if (res && res.kind === 'repo' && Array.isArray(res.cores) && res.cores.filter(Boolean).length >= 3 && pinned.length === res.cores.length) {
-      ok(`requestBlindPin(repo) pins ${res.cores.filter(Boolean).length} repo cores (refs/meta/metaKeys/objects/objectIndex)`)
+    if (res && res.kind === 'repo' &&
+      Array.isArray(res.cores) && res.cores.filter(Boolean).length >= 6 && pinned.length === res.cores.length &&
+      Array.isArray(res.autobases) && res.autobases.filter(Boolean).length >= 2 && pinnedBases.length === res.autobases.length) {
+      ok(`requestBlindPin(repo) pins ${res.cores.filter(Boolean).length} repo cores + ${res.autobases.filter(Boolean).length} collaboration autobases`)
     } else {
-      bad(`requestBlindPin core-selection wrong: ${JSON.stringify(res)} pinnedN=${pinned.length}`)
+      bad(`requestBlindPin selection wrong: ${JSON.stringify(res)} pinnedN=${pinned.length} autobaseN=${pinnedBases.length}`)
     }
 
     // 5. AGPL-path (publishToBlindRelay) guards — entrypoint correctness

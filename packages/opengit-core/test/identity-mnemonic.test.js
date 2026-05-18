@@ -69,7 +69,7 @@ test('Sign/verify still works on a hierarchical identity', async () => {
   assert.equal(OpengitIdentity.verify(sig, tampered, id.publicKey), false)
 })
 
-test('IdentityStore round-trips a hierarchical identity (v2 file format)', async () => {
+test('IdentityStore round-trips a hierarchical identity without persisting the mnemonic', async () => {
   const dir = tmpdir()
   const origHome = process.env.OPENGIT_HOME
   process.env.OPENGIT_HOME = dir
@@ -79,12 +79,31 @@ test('IdentityStore round-trips a hierarchical identity (v2 file format)', async
     assert.ok(id.isHierarchical())
     assert.ok(id.mnemonic)
 
-    // Reload — should land an equivalent identity (same device key + mnemonic).
+    // Reload keeps the device identity and proof, but not the recovery phrase.
     const reload = store.load()
     assert.equal(b4a.toString(reload.publicKey, 'hex'), b4a.toString(id.publicKey, 'hex'))
     assert.equal(b4a.toString(reload.secretKey, 'hex'), b4a.toString(id.secretKey, 'hex'))
-    assert.equal(reload.mnemonic, id.mnemonic)
+    assert.equal(reload.mnemonic, null)
     assert.ok(reload.deviceProof, 'proof preserved across save/load')
+    assert.equal(reload.isHierarchical(), true)
+    assert.equal(fs.readFileSync(store.file, 'utf8').includes(id.mnemonic), false)
+  } finally {
+    if (origHome !== undefined) process.env.OPENGIT_HOME = origHome
+    else delete process.env.OPENGIT_HOME
+  }
+})
+
+test('IdentityStore can persist a mnemonic only when explicitly requested', async () => {
+  const dir = tmpdir()
+  const origHome = process.env.OPENGIT_HOME
+  process.env.OPENGIT_HOME = dir
+  try {
+    const store = new IdentityStore({ profileName: 'default' })
+    const id = await OpengitIdentity.generate()
+    store.save(id, { persistMnemonic: true })
+
+    const reload = store.load()
+    assert.equal(reload.mnemonic, id.mnemonic)
     assert.equal(reload.isHierarchical(), true)
   } finally {
     if (origHome !== undefined) process.env.OPENGIT_HOME = origHome

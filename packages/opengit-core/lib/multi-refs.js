@@ -4,7 +4,16 @@ const Autobase = require('autobase')
 const Hyperbee = require('hyperbee')
 const b4a = require('b4a')
 
-const OpengitIdentity = require('./identity')
+const {
+  MAX_REF,
+  canonicalize,
+  attachDomain,
+  attachIdentityProof,
+  isHex,
+  isSafeString,
+  validSignedShape,
+  verifySig: verifySignedEvent
+} = require('./signed-event')
 
 // MultiWriterRefs (SPEC §3.5) — the multi-writer layer for refs.
 //
@@ -32,9 +41,10 @@ const OpengitIdentity = require('./identity')
 // becomes a no-op (its oldOid no longer matches).
 
 class MultiWriterRefs {
-  constructor (autobase) {
+  constructor (autobase, opts = {}) {
     if (!autobase) throw new Error('autobase instance required')
     this.base = autobase
+    this.domain = opts.domain || null
     this.refsView = null
     this.writersView = null
     this._opened = false
@@ -85,6 +95,16 @@ class MultiWriterRefs {
 
   // ── Convenience: build & sign + append ───────────────────────────────────
 
+  _sign (payload, identity) {
+    attachIdentityProof(payload, identity)
+    attachDomain(payload, this.domain)
+    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    if (!validateRefEvent(payload, this.domain)) {
+      throw new Error(`invalid ref event: ${payload.type || 'unknown'}`)
+    }
+    return payload
+  }
+
   async setRef (ref, newOid, oldOid, identity) {
     if (!identity) throw new Error('setRef requires an identity')
     const payload = {
@@ -95,7 +115,7 @@ class MultiWriterRefs {
       by: b4a.toString(identity.publicKey, 'hex'),
       at: Date.now()
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -107,7 +127,7 @@ class MultiWriterRefs {
       by: b4a.toString(identity.publicKey, 'hex'),
       at: Date.now()
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -119,20 +139,9 @@ class MultiWriterRefs {
       by: b4a.toString(identity.publicKey, 'hex'),
       at: Date.now()
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
-}
-
-// Canonical encoding for signing. Sort keys, omit `sig`. Used for both
-// signing and verification so we don't accidentally diverge.
-function canonicalize (payload) {
-  const sorted = {}
-  for (const k of Object.keys(payload).sort()) {
-    if (k === 'sig') continue
-    sorted[k] = payload[k]
-  }
-  return b4a.from(JSON.stringify(sorted))
 }
 
 // Build the apply function that drives an Autobase view for multi-writer refs.
@@ -141,7 +150,7 @@ function canonicalize (payload) {
 // `bootstrap`: { owners: [hex...], writers: [hex...] } — the initial allowed
 // sets. Persisted on init; never mutated except by ratified `add-writer`/
 // `remove-writer` entries from current owners.
-function makeApply (bootstrap) {
+function makeApply (bootstrap, expectedDomain = null) {
   const initialOwners = new Set((bootstrap.owners || []).map(s => s.toLowerCase()))
   const initialWriters = new Set((bootstrap.writers || []).map(s => s.toLowerCase()))
 
@@ -157,7 +166,8 @@ function makeApply (bootstrap) {
       if (!value || typeof value !== 'object') continue
 
       // Verify signature (every input must be signed by the claimed `by`).
-      if (!verifySig(value)) continue
+      if (!validateRefEvent(value, expectedDomain)) continue
+      if (!verifySig(value, expectedDomain)) continue
 
       const by = value.by && value.by.toLowerCase()
       const writers = await readPubkeySet(view.writers)
@@ -195,15 +205,28 @@ function makeApply (bootstrap) {
 
 // Verify the signature inside an entry against `value.by` (hex pubkey).
 // Pure; no I/O.
-function verifySig (value) {
-  if (!value.by || !value.sig) return false
-  let pub
-  try { pub = b4a.from(value.by, 'hex') } catch { return false }
-  if (pub.length !== 32) return false
-  let sig
-  try { sig = b4a.from(value.sig, 'hex') } catch { return false }
-  if (sig.length !== 64) return false
-  return OpengitIdentity.verify(sig, canonicalize(value), pub)
+function verifySig (value, expectedDomain = null) {
+  return verifySignedEvent(value, expectedDomain)
+}
+
+function validateRefEvent (value, expectedDomain = null) {
+  if (!validSignedShape(value, expectedDomain)) return false
+
+  if (value.type === 'ref-set') {
+    return isSafeString(value.ref, { min: 1, max: MAX_REF }) &&
+      (value.oldOid === null || value.oldOid === undefined || isHex(value.oldOid, 20)) &&
+      isHex(value.newOid, 20)
+  }
+
+  if (value.type === 'ref-del') {
+    return isSafeString(value.ref, { min: 1, max: MAX_REF })
+  }
+
+  if (value.type === 'add-writer' || value.type === 'remove-writer') {
+    return isHex(value.pubkey, 32)
+  }
+
+  return false
 }
 
 // Read all writers from the writers view into a Set<hex>.
@@ -240,5 +263,6 @@ module.exports = {
   makeApply,
   makeOpen,
   canonicalize,
-  verifySig
+  verifySig,
+  validateRefEvent
 }

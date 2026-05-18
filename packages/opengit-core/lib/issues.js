@@ -3,8 +3,25 @@
 const Autobase = require('autobase')
 const Hyperbee = require('hyperbee')
 const b4a = require('b4a')
+const crypto = require('crypto')
 
-const OpengitIdentity = require('./identity')
+const {
+  MAX_ID,
+  MAX_TITLE,
+  MAX_BODY,
+  MAX_LABEL,
+  MAX_LABELS,
+  MAX_ASSIGNEES,
+  canonicalize,
+  attachDomain,
+  attachIdentityProof,
+  isHex,
+  isSafeTimestamp,
+  isSafeString,
+  isStringArray,
+  validSignedShape,
+  verifySig: verifySignedEvent
+} = require('./signed-event')
 
 // Issues (SPEC §6.1) — Autobase-backed thread system.
 //
@@ -35,9 +52,10 @@ const OpengitIdentity = require('./identity')
 // Conflict resolution: deterministic by Autobase order; same on every replica.
 
 class Issues {
-  constructor (autobase) {
+  constructor (autobase, opts = {}) {
     if (!autobase) throw new Error('autobase instance required')
     this.base = autobase
+    this.domain = opts.domain || null
     this._opened = false
   }
 
@@ -95,6 +113,16 @@ class Issues {
 
   // ── Convenience: build & sign + append ──────────────────────────────────
 
+  _sign (payload, identity) {
+    attachIdentityProof(payload, identity)
+    attachDomain(payload, this.domain)
+    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    if (!validateIssueEvent(payload, this.domain)) {
+      throw new Error(`invalid issue event: ${payload.type || 'unknown'}`)
+    }
+    return payload
+  }
+
   async openIssue ({ title, body = '', identity, issueId = null }) {
     if (!identity) throw new Error('openIssue requires an identity')
     if (!title) throw new Error('openIssue requires a title')
@@ -107,7 +135,7 @@ class Issues {
       title,
       body
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     await this.append(payload)
     return id
   }
@@ -123,7 +151,7 @@ class Issues {
       body,
       parentId: parentId || null
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -136,7 +164,7 @@ class Issues {
       at: Date.now(),
       reason
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -149,7 +177,7 @@ class Issues {
       at: Date.now(),
       reason
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -163,7 +191,7 @@ class Issues {
       add,
       remove
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -176,7 +204,7 @@ class Issues {
       at: Date.now(),
       assignees
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 
@@ -197,36 +225,54 @@ class Issues {
       by: b4a.toString(identity.publicKey, 'hex'),
       at: Date.now()
     }
-    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    this._sign(payload, identity)
     return this.append(payload)
   }
 }
 
-// Canonical encoding for signing — sorted keys, omit sig.
-function canonicalize (payload) {
-  const sorted = {}
-  for (const k of Object.keys(payload).sort()) {
-    if (k === 'sig') continue
-    sorted[k] = payload[k]
-  }
-  return b4a.from(JSON.stringify(sorted))
+function verifySig (value, expectedDomain = null) {
+  return verifySignedEvent(value, expectedDomain)
 }
 
-function verifySig (value) {
-  if (!value || !value.by || !value.sig) return false
-  let pub
-  try { pub = b4a.from(value.by, 'hex') } catch { return false }
-  if (pub.length !== 32) return false
-  let sig
-  try { sig = b4a.from(value.sig, 'hex') } catch { return false }
-  if (sig.length !== 64) return false
-  return OpengitIdentity.verify(sig, canonicalize(value), pub)
+function validateIssueEvent (v, expectedDomain = null) {
+  if (!validSignedShape(v, expectedDomain)) return false
+
+  if (v.type === 'writer.add') {
+    return isHex(v.writerKey, 32)
+  }
+
+  if (!isSafeString(v.issueId, { min: 1, max: MAX_ID })) return false
+
+  if (v.type === 'issue.open') {
+    return isSafeString(v.title, { min: 1, max: MAX_TITLE }) &&
+      isSafeString(v.body || '', { max: MAX_BODY })
+  }
+
+  if (v.type === 'issue.comment') {
+    return isSafeString(v.body || '', { max: MAX_BODY }) &&
+      (v.parentId === null || v.parentId === undefined || isSafeString(v.parentId, { min: 1, max: MAX_ID }))
+  }
+
+  if (v.type === 'issue.close' || v.type === 'issue.reopen') {
+    return isSafeString(v.reason || '', { max: MAX_BODY })
+  }
+
+  if (v.type === 'issue.label') {
+    return isStringArray(v.add || [], { maxItems: MAX_LABELS, maxLength: MAX_LABEL }) &&
+      isStringArray(v.remove || [], { maxItems: MAX_LABELS, maxLength: MAX_LABEL })
+  }
+
+  if (v.type === 'issue.assign') {
+    return isStringArray(v.assignees || [], { maxItems: MAX_ASSIGNEES, hexBytes: 32 })
+  }
+
+  return false
 }
 
 // Build the apply function for issues. `bootstrap` is read from the repo's
 // ns:meta and supplies the moderator set. Owner-only mutations go through
 // the same path with `moderators` containing owners.
-function makeApply (bootstrap) {
+function makeApply (bootstrap, expectedDomain = null) {
   const moderators = new Set([
     ...(bootstrap.moderators || []),
     ...(bootstrap.owners || [])
@@ -236,7 +282,8 @@ function makeApply (bootstrap) {
     for (const node of nodes) {
       const v = node.value
       if (!v || typeof v !== 'object') continue
-      if (!verifySig(v)) continue
+      if (!validateIssueEvent(v, expectedDomain)) continue
+      if (!verifySig(v, expectedDomain)) continue
 
       const by = v.by.toLowerCase()
       const isModerator = moderators.has(by)
@@ -344,7 +391,7 @@ function makeApply (bootstrap) {
 // Threads are sorted by lamport-ish: zero-padded `at` + author for tie-break.
 // `at` is unix ms; padding to 16 hex digits sorts lexicographically.
 function threadKey (issueId, at, by) {
-  const ts = at.toString(16).padStart(16, '0')
+  const ts = (isSafeTimestamp(at) ? at : 0).toString(16).padStart(16, '0')
   return `${issueId}/${ts}/${by}`
 }
 
@@ -368,11 +415,12 @@ function randomId () {
   // 12-char base32-ish from crypto random; not strictly unique but collisions
   // are caught by first-write-wins on issue.open.
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  const bytes = crypto.randomBytes(12)
   let id = ''
   for (let i = 0; i < 12; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)]
+    id += chars[bytes[i] % chars.length]
   }
   return id
 }
 
-module.exports = { Issues, makeApply, makeOpen, canonicalize, verifySig, threadKey }
+module.exports = { Issues, makeApply, makeOpen, canonicalize, verifySig, validateIssueEvent, threadKey }

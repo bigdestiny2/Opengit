@@ -88,6 +88,28 @@ class OpengitRepo {
     return opts
   }
 
+  _autobaseStore (name) {
+    const opts = {}
+    if (this._contentKey) opts.encryptionKey = this._contentKey
+    return this.store.namespace(name, opts)
+  }
+
+  _autobaseHandlers (apply, open) {
+    const opts = { apply, open, valueEncoding: 'json' }
+    if (this._contentKey) opts.encryptionKey = this._contentKey
+    return opts
+  }
+
+  _eventDomain (stream) {
+    return { spec: SPEC_VERSION, repo: this.keyHex, stream }
+  }
+
+  _requireContentKeyForPrivateCollab () {
+    if (this.visibility === 'private' && !this._contentKey) {
+      throw new Error('private repo collaboration data requires content key')
+    }
+  }
+
   // Meta-keys is the wrapped-key bootstrap surface: a Hyperbee that maps
   // collaborator identity-pubkey -> sealed content key. It MUST stay
   // unencrypted (plaintext at the Hypercore level) so a freshly-invited
@@ -201,11 +223,10 @@ class OpengitRepo {
     // waiting for the exclusive `local` lock the first one holds. That hung
     // every remote-side openPR/openIssue (order-independent: whichever opens
     // second). Per-Autobase namespacing gives each its own local/_system.
-    this._refsBase = new Autobase(this.store.namespace('opengit:autobase:refs'), null, {
-      apply: makeApply(bootstrap),
-      open: makeOpen(),
-      valueEncoding: 'json'
-    })
+    this._requireContentKeyForPrivateCollab()
+    const domain = this._eventDomain('refs')
+    this._refsBase = new Autobase(this._autobaseStore('opengit:autobase:refs'), null,
+      this._autobaseHandlers(makeApply(bootstrap, domain), makeOpen()))
     await this._refsBase.ready()
 
     // If we're writable, ensure our local-input is registered.
@@ -218,7 +239,7 @@ class OpengitRepo {
       } catch {}
     }
 
-    this.multiRefs = new MultiWriterRefs(this._refsBase)
+    this.multiRefs = new MultiWriterRefs(this._refsBase, { domain })
     await this.multiRefs.ready()
   }
 
@@ -614,7 +635,7 @@ class OpengitRepo {
       } catch { return false }
     }
     const visNode = await this.manifest.get('visibility')
-    if (visNode && visNode.value === 'private' && this._contentKey) {
+    if (visNode && visNode.value === 'private') {
       this.visibility = 'private'
     }
     return this._rebindFromCores(node.value)
@@ -740,22 +761,21 @@ class OpengitRepo {
 
   async _openIssues () {
     if (this.issues) return this.issues
+    this._requireContentKeyForPrivateCollab()
     // Authority from the plaintext manifest (A1 pattern) — NOT meta,
     // which a contributor hasn't replicated yet when this runs.
     const bootstrap = await this._manifestAuthority()
+    const domain = this._eventDomain('issues')
 
     // Own namespace (BUG #7: shared raw store ⇒ shared `local` core ⇒
     // second-Autobase deadlock on a replicating remote). Bootstrap from
     // the manifest-published key when present so all forges share ONE
     // issues Autobase; the founding owner passes null then publishes.
     const bootKey = await this._autobaseBootKey('issuesAutobase')
-    this._issuesBase = new Autobase(this.store.namespace('opengit:autobase:issues'), bootKey, {
-      apply: Issues.makeApply(bootstrap),
-      open: Issues.makeOpen(),
-      valueEncoding: 'json'
-    })
+    this._issuesBase = new Autobase(this._autobaseStore('opengit:autobase:issues'), bootKey,
+      this._autobaseHandlers(Issues.makeApply(bootstrap, domain), Issues.makeOpen()))
     await this._issuesBase.ready()
-    this.issues = new Issues.Issues(this._issuesBase)
+    this.issues = new Issues.Issues(this._issuesBase, { domain })
     await this.issues.ready()
     if (!bootKey) await this._publishAutobaseKey('issuesAutobase', this._issuesBase.key)
     return this.issues
@@ -812,18 +832,17 @@ class OpengitRepo {
 
   async _openPRs () {
     if (this.prs) return this.prs
+    this._requireContentKeyForPrivateCollab()
     // Authority from the plaintext manifest (A1 pattern) — see _openIssues.
     const bootstrap = await this._manifestAuthority()
+    const domain = this._eventDomain('prs')
     // Own namespace (BUG #7) + manifest-published bootstrap key so every
     // forge shares ONE PR Autobase (see _openIssues / _autobaseBootKey).
     const bootKey = await this._autobaseBootKey('prsAutobase')
-    this._prsBase = new Autobase(this.store.namespace('opengit:autobase:prs'), bootKey, {
-      apply: PRs.makeApply(bootstrap),
-      open: PRs.makeOpen(),
-      valueEncoding: 'json'
-    })
+    this._prsBase = new Autobase(this._autobaseStore('opengit:autobase:prs'), bootKey,
+      this._autobaseHandlers(PRs.makeApply(bootstrap, domain), PRs.makeOpen()))
     await this._prsBase.ready()
-    this.prs = new PRs.PRs(this._prsBase)
+    this.prs = new PRs.PRs(this._prsBase, { domain })
     await this.prs.ready()
     if (!bootKey) await this._publishAutobaseKey('prsAutobase', this._prsBase.key)
     return this.prs

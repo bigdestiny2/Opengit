@@ -47,7 +47,7 @@ test('OpengitRelay: blind mode for a private repo (operator has no content key)'
     await ownerForge.close()
 
     // Relay operator runs on a SEPARATE profile/storage with NO content key
-    // for that repo in their keyring. They join the private topic anyway.
+    // for that repo in their keyring. They join the repo topic anyway.
     const relay = new OpengitRelay({
       storage: path.join(dir, 'relay-store'),
       profileName: 'relay-op',

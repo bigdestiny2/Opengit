@@ -76,7 +76,9 @@ test('requestBlindPin(repo) dispatches via the repo path (background mode)', asy
     const result = await A.forge.requestBlindPin(repo) // background
     assert.equal(result.kind, 'repo')
     assert.ok(Array.isArray(result.cores))
-    assert.ok(result.cores.length >= 1, 'enumerated the repo cores to pin')
+    assert.ok(result.cores.length >= 6, 'enumerated every repo core, including the manifest')
+    assert.ok(Array.isArray(result.autobases))
+    assert.ok(result.autobases.length >= 2, 'enumerated issue/PR autobases to pin')
   } finally {
     await fix.teardown()
   }

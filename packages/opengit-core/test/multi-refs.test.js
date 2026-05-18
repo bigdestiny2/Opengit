@@ -11,7 +11,8 @@ let autobaseAvailable = true
 try { require('autobase') } catch { autobaseAvailable = false }
 
 const { OpengitForge, OpengitIdentity } = require('../')
-const { canonicalize, verifySig } = require('../lib/multi-refs')
+const { canonicalize, verifySig, validateRefEvent } = require('../lib/multi-refs')
+const { attachDomain } = require('../lib/signed-event')
 
 function tmpdir () {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'opengit-multi-'))
@@ -47,6 +48,37 @@ test('verifySig: ed25519 round-trip', () => {
   // Tamper with the ref name → signature fails.
   payload.ref = 'refs/heads/other'
   assert.equal(verifySig(payload), false)
+})
+
+test('verifySig: rejects ref replay across stream domains', () => {
+  const id = new OpengitIdentity()
+  const domain = { spec: 'opengit/v1', repo: 'a'.repeat(64), stream: 'refs' }
+  const payload = attachDomain({
+    type: 'ref-set',
+    ref: 'refs/heads/main',
+    oldOid: null,
+    newOid: 'a'.repeat(40),
+    by: b4a.toString(id.publicKey, 'hex'),
+    at: 1234
+  }, domain)
+  payload.sig = b4a.toString(id.sign(canonicalize(payload)), 'hex')
+
+  assert.equal(verifySig(payload, domain), true)
+  assert.equal(verifySig(payload, { ...domain, stream: 'issues' }), false)
+})
+
+test('validateRefEvent rejects malformed signed refs before apply', () => {
+  const id = new OpengitIdentity()
+  const payload = {
+    type: 'ref-set',
+    ref: 'refs/heads/main',
+    oldOid: null,
+    newOid: 'not-a-commit',
+    by: b4a.toString(id.publicKey, 'hex'),
+    at: 1234
+  }
+  payload.sig = b4a.toString(id.sign(canonicalize(payload)), 'hex')
+  assert.equal(validateRefEvent(payload), false)
 })
 
 test('verifySig: rejects bad inputs', () => {

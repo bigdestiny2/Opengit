@@ -128,6 +128,56 @@ test('A1: private-repo cold-bootstrap — invited collaborator gets the content 
   }
 })
 
+test('swarm: private issues stay sealed until collaborator installs content key', async () => {
+  const fix = await SwarmFixture.create()
+  try {
+    const A = await fix.forge('alice-private-issues')
+    const B = await fix.forge('bob-private-issues')
+
+    const repo = await A.forge.createRepo('private-issues', { visibility: 'private' })
+    const issueId = await repo.openIssue({ title: 'sealed issue', body: 'private body' })
+    await repo.addInvite(B.identity.publicKey, { label: 'Bob' })
+    await A.forge.joinRepoTopic(repo, { server: true, client: true })
+
+    const bob = await B.forge.openRepo(repo.keyZ32)
+    await B.forge.joinRepoTopic(bob, { server: false, client: true })
+
+    await waitFor(async () => {
+      await bob.refresh()
+      const cores = await bob.manifest.get('cores')
+      return cores && cores.value && cores.value.issuesAutobase ? true : null
+    }, { timeoutMs: 30_000, label: 'private issue autobase manifest key' })
+
+    await assert.rejects(
+      () => bob.listIssues(),
+      /requires content key/
+    )
+
+    const recoveredCk = await waitFor(async () => {
+      try {
+        const got = await bob.acceptInvite(B.identity)
+        return got || null
+      } catch { return null }
+    }, { timeoutMs: 30_000, label: 'private issues content key' })
+
+    bob.setContentKey(recoveredCk)
+    const issues = await waitFor(async () => {
+      await bob.refresh()
+      try {
+        const list = await bob.listIssues()
+        return list.length ? list : null
+      } catch {
+        return null
+      }
+    }, { timeoutMs: 30_000, label: 'decrypted private issues' })
+
+    assert.equal(issues[0].issueId, issueId)
+    assert.equal(issues[0].title, 'sealed issue')
+  } finally {
+    await fix.teardown()
+  }
+})
+
 // (Indexer-over-swarm integration test lives in packages/opengit-indexer/test/
 // because it depends on the indexer package, which would create an import
 // cycle if it lived in core's test dir.)

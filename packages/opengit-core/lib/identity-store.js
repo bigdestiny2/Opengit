@@ -17,7 +17,7 @@ const OpengitIdentity = require('./identity')
 //     { version: 2, secretKey: <base64>, publicKey: <hex>,
 //       createdAt: <unix-ms>,
 //       hierarchical: true,
-//       mnemonic: "<24 BIP-39 words>",      // user's recovery phrase
+//       mnemonic: null | "<24 BIP-39 words>", // opt-in legacy disk storage
 //       identityPublicKey: <hex>,           // root identity (stable across devices)
 //       deviceProof: <base64> }             // attestation chain device→identity
 //
@@ -75,10 +75,12 @@ class IdentityStore {
   }
 
   // Save an identity. Atomic write-then-rename, mode 0600.
-  // Picks v1 vs v2 based on whether the identity is hierarchical.
-  save (identity) {
+  // Picks v1 vs v2 based on whether the identity is hierarchical. The
+  // recovery phrase is intentionally not persisted unless a caller opts in.
+  save (identity, opts = {}) {
     if (!identity || !identity.secretKey) throw new Error('identity is required')
     fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 })
+    const persistMnemonic = opts.persistMnemonic === true
 
     const isHierarchical = typeof identity.isHierarchical === 'function'
       ? identity.isHierarchical()
@@ -91,7 +93,7 @@ class IdentityStore {
           publicKey: b4a.toString(identity.publicKey, 'hex'),
           createdAt: Date.now(),
           hierarchical: true,
-          mnemonic: identity.mnemonic,
+          mnemonic: persistMnemonic ? identity.mnemonic : null,
           identityPublicKey: identity.identityPublicKey
             ? b4a.toString(identity.identityPublicKey, 'hex')
             : null,
@@ -125,11 +127,11 @@ class IdentityStore {
   // v0.0.9: async variant that creates a hierarchical (mnemonic-rooted)
   // identity if none exists. Use this from new code (CLI uses it for
   // `opengit identity init` by default).
-  async loadOrCreateHierarchical () {
+  async loadOrCreateHierarchical (opts = {}) {
     const existing = this.load()
     if (existing) return existing
     const fresh = await OpengitIdentity.generate()
-    this.save(fresh)
+    this.save(fresh, opts)
     return fresh
   }
 
