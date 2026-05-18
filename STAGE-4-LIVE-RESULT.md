@@ -6,7 +6,7 @@ person on a second physical machine, replicated over the real Hyperswarm DHT
 to the repo owner, who closed and merged them. The milestone Opengit had
 never reached — reached.
 
-This is the Definition of Done from `LIVE-TEST-PLAN.md`:
+This is the Definition of Done from `docs/history/LIVE-TEST-PLAN.md`:
 
 > A change Ian makes on his machine lands in your repo on yours — over the
 > real network, through `git`, with at least one signed issue and one merged
@@ -84,7 +84,7 @@ Opengit is a forge. 🎉
 
 Stage 0 solo pre-flight caught and fixed **8 real bugs** before Ian was
 involved (6 in the git-data path, the Autobase `local`-core collision, and
-the cross-party silo / empty-moderator-set bug) — see `LIVE-TEST-PLAN.md`
+the cross-party silo / empty-moderator-set bug) — see `docs/history/LIVE-TEST-PLAN.md`
 §Status. The in-harness `scripts/dry-run-collab.js` was green **9/9** with
 the real repo as payload, and the loop was E2E-proven across two OS
 processes (script and CLI) before this session. Discipline paid: the live

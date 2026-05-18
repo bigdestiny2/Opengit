@@ -6,7 +6,7 @@ plus a signed issue and a merged PR crossing between you, over the real network.
 
 This runbook is **agent-runnable**: every step is a concrete command that prints a
 clear marker and exits 0 on success / non-zero on failure. Companion design doc:
-`LIVE-TEST-PLAN.md` (stages + failure playbook). In-harness rehearsal that this
+`docs/history/LIVE-TEST-PLAN.md` (stages + failure playbook). In-harness rehearsal that this
 mirrors: `scripts/dry-run-collab.js` (proven 9/9).
 
 > Cardinal rule: **add exactly one unproven variable per stage.** If a stage is
@@ -86,7 +86,7 @@ in-harness). Go to Stage 2/3 — do **not** debug NAT live.
   ```bash
   export OPENGIT_BOOTSTRAP="relay-host:port[,relay-host:port]"   # both machines, all stages
   ```
-  Re-run Stage 1 with that set. See `LIVE-TEST-PLAN.md` §Stage 3 + failure table.
+  Re-run Stage 1 with that set. See `docs/history/LIVE-TEST-PLAN.md` §Stage 3 + failure table.
 
 ---
 
@@ -139,7 +139,7 @@ Opengit is a forge. 🎉
 signed issue and a merged PR crossing two real machines over the P2P network —
 **Opengit proving it is a forge.**
 
-Optional (private-repo cold-bootstrap, `LIVE-TEST-PLAN.md` §Stage 4): repeat with
+Optional (private-repo cold-bootstrap, `docs/history/LIVE-TEST-PLAN.md` §Stage 4): repeat with
 `opengit init --private`; you `opengit invite <repo> <Ian-identity-pub>`; Ian
 `opengit accept-invite <repo>` then re-runs the contributor role.
 
@@ -232,7 +232,7 @@ Restarting the maintainer with the same `--name` + `OPENGIT_HOME` re-opens the
    `live-admit.txt` in the maintainer's cwd, or `OPENGIT_BOOTSTRAP` differs
    between machines. Re-check both.
 4. Owner laptop sleeps → expected; that's what Stage 3 (HiveRelay) is for.
-5. Everything else → `LIVE-TEST-PLAN.md` failure-playbook table.
+5. Everything else → `docs/history/LIVE-TEST-PLAN.md` failure-playbook table.
 
 ## Definition of done
 
