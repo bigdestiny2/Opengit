@@ -95,6 +95,26 @@ A change Ian makes on his machine lands in your repo on yours — over the real 
 
 ---
 
+## Stage 5 — Self-host: drop GitHub, dogfood completely
+
+> GitHub (`github.com/bigdestiny2/Opengit`) is the **bootstrap channel only** — the known-good path used to validate the new one (cardinal rule). The endgame is Opengit hosting Opengit's own code + collaboration + build. Cut over only when the Opengit path clears the **same bar** GitHub does (dry-run-proven, then live-proven). Honest blocker list — do not skip:
+
+**Blockers (proven-state, not aspiration):**
+1. **Bidirectional code push — the big one.** Proven today: *single-writer* — owner pushes via the manifest `ns:refs` Hyperbee, contributor **clones**. **Not proven:** a contributor pushing real git objects that land in the canonical repo. The multi-writer refs Autobase is still the pre-fix **isolated silo** shape (`bootstrap=null`, key never published in the manifest) — the exact bug class already fixed for issues/PRs. Two viable paths, pick one and prove it: (a) apply the same proven manifest pattern (publish refs-autobase key + `admit`/`sync` writer handshake) to multi-writer refs; or (b) **fork→fetch→merge** — owner `git fetch`es the contributor's own `opengit://` fork and merges locally (no multi-writer needed; simpler; likely the right first cut). Until one is dry-run + live proven, collaborative *building* on Opengit cannot fully replace GitHub.
+2. **Always-on availability.** GitHub is 24/7; P2P needs a persistent node so Ian can push while you sleep. Stage 3 / HiveRelay (Ian's turf): a blind-peer/relay pinning the canonical repo cores. Required for *async* dogfood; "both online" suffices only for the live test.
+3. **Daily-use ergonomics.** One-shot `opengit issue`/`pr` are local-only; `opengit collab` is a coordinated-session model. Daily dogfood wants `opengit issue open` to "just work" → an **`opengit daemon`** (owns the Corestore, stays online, serves one-shot CLI clients + git + relay). Also: ongoing `git push opengit://` (not just initial), branch workflow, conflict handling.
+4. **Trust handoff.** Exchange the canonical `opengit://<key>` (+ private content-key handshake) out-of-band **once**; thereafter GitHub is redundant. Keep GitHub as a frozen read-only fallback until N green Opengit-only cycles.
+
+**Cutover sequence (each gated like the live test — one variable, dry-run before live):**
+- **5.1** Land + dry-run-prove **contributor code push** (fork→fetch→merge first; multi-writer refs if needed) with the real Opengit repo as payload — extend `scripts/dry-run-collab.js`. *Solo-provable now; the real critical path.*
+- **5.2** Stand up an **always-on HiveRelay-backed Opengit node** pinning the canonical repo; verify owner-offline clone + pull + push.
+- **5.3** **Mirror cutover:** publish canonical to `opengit://`; GitHub → read-only mirror. Run one full real work cycle (issue → contributor branch push → PR → review → owner merge) entirely on Opengit, both devs.
+- **5.4** **GitHub-free:** after N green cycles, stop pushing to GitHub; Opengit is source of truth; `opengit daemon` for ergonomics.
+
+**Self-host Definition of done:** a full feature (issue → contributor branch push → PR → review → owner merge) completed with **GitHub disconnected**, the repo available across an owner-offline window, reproduced **twice**.
+
+---
+
 ## Status
 
 - [x] **0.1 — DONE.** Deterministic gate test green (`packages/git-remote-opengit/test/integration/clone.test.js`): real `git push opengit://` through the real helper stores refs+objects; real `git clone` of the rebuilt shadow yields a byte-correct tree. Subprocess-over-DHT clone is a documented skip (synthetic single-node DHT can't cross-process rendezvous — that's the live test's job). **Stage 0.1 caught and fixed SIX real bugs that would each have killed the live session:**
