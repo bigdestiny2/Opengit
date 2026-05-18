@@ -136,3 +136,77 @@ test('renderApp surfaces a signed issue in the JSON API', async (t) => {
     await forge.close()
   }
 })
+
+test('renderApp includes a code diff for a same-repo branch PR', async (t) => {
+  if (skipIfNoGit(t)) return
+  const { dir, forge, repo, shadowRoot } = await makeFixtureRepo()
+  try {
+    // Build a `feature` branch with a real change on top of `main`, then
+    // re-sync the shadow so its bare .git holds both refs (a static
+    // snapshot only has the git objects of repos in this forge build).
+    const work = path.join(dir, 'work')
+    spawnSync('git', ['checkout', '-q', '-b', 'feature'], { cwd: work })
+    fs.writeFileSync(path.join(work, 'src', 'main.js'),
+      'function hi(){ return "hello, world" }\nfunction bye(){ return "bye" }\nconsole.log(hi(), bye())\n')
+    fs.writeFileSync(path.join(work, 'NEWFILE.md'), '# Added by the PR\n')
+    spawnSync('git', ['add', '.'], { cwd: work })
+    spawnSync('git', ['commit', '-q', '-m', 'feature: tweak main + add file'], { cwd: work })
+    spawnSync('git', ['checkout', '-q', 'main'], { cwd: work })
+
+    const shadow = new ShadowRepo({ repoKeyHex: repo.keyHex, profileName: 'webapp-test', root: shadowRoot })
+    copyDir(path.join(work, '.git'), shadow.path)
+    await shadow.pushToRepo(repo)
+
+    // Same-repo branch PR: fromRepo === this repo's own key.
+    const prId = await repo.openPR({
+      title: 'add bye() + a new file',
+      body: 'demonstrates a code diff in the forge web app',
+      fromRepo: repo.keyHex,
+      fromRef: 'refs/heads/feature',
+      toRef: 'refs/heads/main'
+    })
+    await new Promise(r => setTimeout(r, 120))
+
+    const map = await pages.renderToMap(
+      { repo, profileName: 'webapp-test', shadowRoot }, pages.renderApp
+    )
+    const str = (p) => map.get(p) && Buffer.from(map.get(p)).toString('utf8')
+    const R = `/r/${repo.keyZ32}`
+
+    const one = JSON.parse(str(`${R}/api/pr/${prId}.json`))
+    assert.ok(one.pr && one.pr.title === 'add bye() + a new file')
+    assert.ok(Array.isArray(one.events))
+    assert.ok(one.diff, 'pr json must carry a diff field')
+    assert.equal(one.diff.available, true)
+    assert.equal(one.diff.fromRef, 'refs/heads/feature')
+    assert.equal(one.diff.toRef, 'refs/heads/main')
+    assert.ok(/^[0-9a-f]+$/.test(one.diff.base) && /^[0-9a-f]+$/.test(one.diff.head))
+    // patch text contains the changed source file
+    assert.match(one.diff.patch, /src\/main\.js/)
+    assert.match(one.diff.patch, /bye/)
+    // files[] lists the modified file and the newly added one
+    const f = new Map(one.diff.files.map(x => [x.path, x]))
+    assert.ok(f.has('src/main.js'), 'src/main.js in diff.files')
+    assert.equal(f.get('src/main.js').status, 'M')
+    assert.ok(f.get('src/main.js').additions >= 1)
+    assert.ok(f.has('NEWFILE.md'), 'NEWFILE.md in diff.files')
+    assert.equal(f.get('NEWFILE.md').status, 'A')
+
+    // A PR whose fork isn't in this snapshot degrades gracefully.
+    const ghostId = await repo.openPR({
+      title: 'from an unreplicated fork',
+      fromRepo: 'a'.repeat(64),
+      fromRef: 'refs/heads/x',
+      toRef: 'refs/heads/main'
+    })
+    await new Promise(r => setTimeout(r, 120))
+    const map2 = await pages.renderToMap(
+      { repo, profileName: 'webapp-test', shadowRoot }, pages.renderApp
+    )
+    const ghost = JSON.parse(Buffer.from(map2.get(`${R}/api/pr/${ghostId}.json`)).toString('utf8'))
+    assert.equal(ghost.diff.available, false)
+    assert.ok(typeof ghost.diff.reason === 'string' && ghost.diff.reason.length > 0)
+  } finally {
+    await forge.close()
+  }
+})
