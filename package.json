@@ -14,7 +14,9 @@
     "preview:site": "node scripts/build-site.js",
     "preview:app": "node scripts/preview-webapp.js",
     "preview:serve": "node scripts/serve-local.js --dir .preview --port 8088",
-    "preview": "node scripts/build-site.js && node scripts/preview-webapp.js && node scripts/serve-local.js --dir .preview --port 8088"
+    "preview": "node scripts/build-site.js && node scripts/preview-webapp.js && node scripts/serve-local.js --dir .preview --port 8088",
+    "forge": "node scripts/build-forge.js",
+    "forge:serve": "node scripts/build-forge.js && node scripts/serve-local.js --dir dist --port 8090"
   },
   "engines": {
     "node": ">=20"

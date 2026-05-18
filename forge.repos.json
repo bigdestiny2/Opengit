@@ -1,0 +1,21 @@
+{
+  "title": "Opengit Forge",
+  "description": "Peer-to-peer code hosting. The repos below are published as a static forge web app — same bundle on the web and at hyper://<key>/ in PearBrowser.",
+  "repos": [
+    {
+      "name": "opengit",
+      "description": "A peer-to-peer code forge (this project). Git, issues, PRs — no server.",
+      "source": { "local": "." }
+    },
+    {
+      "name": "p2p-hiverelay",
+      "description": "HiveRelay — the persistence / blind-relay backbone that keeps repos available when owners are offline.",
+      "source": { "github": "bigdestiny2/P2P-Hiverelay" }
+    },
+    {
+      "name": "pearbrowser",
+      "description": "PearBrowser — a P2P browser; renders opengit:// repos and hyper:// drives.",
+      "source": { "github": "bigdestiny2/PearBrowser" }
+    }
+  ]
+}
