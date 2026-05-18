@@ -1,16 +1,16 @@
 /* Opengit forge web app (SPA). Zero dependencies. Reads the static JSON
-   API baked into this Hyperdrive: api/index.json (the forge — every repo
-   this app was published with) and r/<key>/api/*.json + r/<key>/raw/...
-   per repo. All fetches RELATIVE, so the same bundle works at
-   hyper://<key>/ in PearBrowser and any web path, online or offline.
-   Read-only snapshot. Light + dark themes. */
+   API baked into this Hyperdrive: api/index.json (every repo this app was
+   published with) and r/<key>/api/*.json + r/<key>/raw/... per repo. All
+   fetches RELATIVE, so the same bundle works at hyper://<key>/ in
+   PearBrowser and any web path, online or offline. Read-only snapshot.
+   Persistent shell (only <main> swaps per route). Light + dark themes. */
 'use strict'
 ;(function () {
-  var APP = document.getElementById('app')
   var INDEX = null   // api/index.json
   var REPO = null     // current repo's api/repo.json
   var CURKEY = null   // current repo z32
   var TREE = {}       // key|safeBranch -> {entries,map}
+  var SHELL = false    // shell built?
 
   // ── theme ───────────────────────────────────────────────────────────────
   function initTheme () {
@@ -23,7 +23,8 @@
     var cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light'
     document.documentElement.setAttribute('data-theme', cur)
     try { localStorage.setItem('og-theme', cur) } catch (e) {}
-    var b = document.getElementById('themebtn'); if (b) b.textContent = cur === 'light' ? '☾' : '☀'
+    var b = document.getElementById('themebtn')
+    if (b) { b.textContent = cur === 'light' ? '☾' : '☀'; b.setAttribute('aria-label', 'Switch to ' + (cur === 'light' ? 'dark' : 'light') + ' theme') }
   }
 
   // ── utils ───────────────────────────────────────────────────────────────
@@ -32,18 +33,51 @@
       return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
     })
   }
+  function byId (id) { return document.getElementById(id) }
   function h (html) { var d = document.createElement('div'); d.innerHTML = html; return d.firstElementChild }
   function setMain (node) {
-    var m = document.querySelector('main'); if (!m) return
-    m.innerHTML = ''; m.appendChild(node.nodeType ? node : h(String(node))); window.scrollTo(0, 0)
+    var m = byId('main'); if (!m) return
+    m.innerHTML = ''
+    m.appendChild(node && node.nodeType ? node : h(String(node)))
+    try { m.focus({ preventScroll: true }) } catch (e) {}
+    window.scrollTo(0, 0)
   }
   function getJSON (p) { return fetch(p).then(function (r) { if (!r.ok) throw new Error(r.status + ' ' + p); return r.json() }) }
   function getText (p) { return fetch(p).then(function (r) { if (!r.ok) throw new Error(r.status + ' ' + p); return r.text() }) }
   function fmt (d) { try { return new Date(d).toISOString().slice(0, 10) } catch (e) { return '' } }
+  function rel (d) {
+    var t = Date.parse(d); if (!t) return ''
+    var s = Math.max(1, (Date.now() - t) / 1000)
+    var u = [['y', 31536000], ['mo', 2592000], ['w', 604800], ['d', 86400], ['h', 3600], ['m', 60]]
+    for (var i = 0; i < u.length; i++) { if (s >= u[i][1]) { return Math.floor(s / u[i][1]) + u[i][0] + ' ago' } }
+    return Math.floor(s) + 's ago'
+  }
   function short (s) { return String(s || '').slice(0, 8) }
   function safeBranch (n) { return String(n).replace(/[^\w.-]+/g, '_') }
   function base () { return 'r/' + CURKEY + '/' }
   function rurl (sub) { return '#/r/' + encodeURIComponent(CURKEY) + sub }
+  function skeleton (rows) {
+    var r = ''; for (var i = 0; i < (rows || 5); i++) r += '<div class="skrow"></div>'
+    return '<div class="skel" aria-busy="true" aria-label="Loading">' + r + '</div>'
+  }
+  function defaultBranch () { return REPO ? REPO.defaultBranch : 'main' }
+  function plural (n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')) }
+  function repoAge (r) {
+    var d = r && (r.generatedAt || r.updatedAt || r.publishedAt)
+    return d ? (rel(d) || fmt(d)) : ''
+  }
+  function cloneUrl (r) { return 'opengit://' + (r.repoKeyZ32 || r.key || '') }
+  function cliRows (rows) {
+    return '<div class="clirows">' + rows.map(function (v) {
+      return '<div class="clone-row"><code>' + esc(v) + '</code><button class="copy" type="button" data-c="' + esc(v) + '" aria-label="Copy command">copy</button></div>'
+    }).join('') + '</div>'
+  }
+  function emptyBox (title, body, rows, href, label) {
+    return '<div class="empty rich"><div class="empty-title">' + esc(title) + '</div>' +
+      (body ? '<p>' + esc(body) + '</p>' : '') +
+      (rows && rows.length ? cliRows(rows) : '') +
+      (href ? '<a class="btn" href="' + href + '">' + esc(label || 'go back') + '</a>' : '') + '</div>'
+  }
 
   // ── markdown (README, issue/PR bodies) ──────────────────────────────────
   function md (src) {
@@ -69,7 +103,12 @@
         while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) { it.push('<li>' + inline(lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, '')) + '</li>'); i++ }
         out.push('<' + tag + '>' + it.join('') + '</' + tag + '>'); continue
       }
-      if (/^>\s?/.test(ln)) { var q = []; while (i < lines.length && /^>\s?/.test(lines[i])) { q.push(inline(lines[i].replace(/^>\s?/, ''))); i++ } out.push('<blockquote>' + q.join('<br>') + '</blockquote>'); continue }
+      if (/^>\s?/.test(ln)) {
+        var q = []
+        while (i < lines.length && /^>\s?/.test(lines[i])) { q.push(lines[i].replace(/^>\s?/, '')); i++ }
+        out.push('<blockquote>' + inline(q.join(' ')) + '</blockquote>')
+        continue
+      }
       if (/^\s*\|.*\|\s*$/.test(ln) && i + 1 < lines.length && /^\s*\|[-:\s|]+\|\s*$/.test(lines[i + 1])) {
         function cells (r) { return r.replace(/^\s*\||\|\s*$/g, '').split('|').map(function (c) { return c.trim() }) }
         var rows = ['<tr>' + cells(ln).map(function (c) { return '<th>' + inline(c) + '</th>' }).join('') + '</tr>']; i += 2
@@ -94,9 +133,12 @@
     t = t.replace(KW, '<span class="tok-k">$&</span>')
     return t
   }
-  function codeBlock (text) {
+  function codeBlock (text, wrap) {
     var lines = String(text).split('\n'); if (lines.length && lines[lines.length - 1] === '') lines.pop()
-    return '<pre class="code">' + lines.map(function (l) { return '<span class="ln">' + (hi(l) || '&nbsp;') + '</span>' }).join('') + '</pre>'
+    var body = lines.map(function (l, n) {
+      return '<span class="ln" id="L' + (n + 1) + '"><a class="lnref" href="#L' + (n + 1) + '" aria-hidden="true"></a>' + (hi(l) || '&nbsp;') + '</span>'
+    }).join('')
+    return '<pre class="code' + (wrap ? ' wrap' : '') + '">' + body + '</pre>'
   }
   function diffBlock (text) {
     return '<pre class="diff">' + String(text || '').split('\n').map(function (l) {
@@ -109,105 +151,196 @@
     }).join('\n') + '</pre>'
   }
 
-  // ── chrome ──────────────────────────────────────────────────────────────
-  function chrome (active) {
+  // ── persistent shell (built once; only #ctx + #main change per route) ───
+  function renderShell () {
+    if (SHELL) return
+    var fresh = INDEX && INDEX.generatedAt
+      ? ' · snapshot rendered <time datetime="' + esc(INDEX.generatedAt) + '">' + esc(rel(INDEX.generatedAt) || fmt(INDEX.generatedAt)) + '</time>'
+      : ''
+    document.body.innerHTML =
+      '<a class="skip" href="#main">Skip to content</a>' +
+      '<header class="top"><div class="row">' +
+        '<a class="brand" href="#/"><span class="g">⌬</span> ' + esc(INDEX && INDEX.count === 1 ? INDEX.repos[0].name : 'opengit') + '</a>' +
+        '<div id="ctx"></div>' +
+        '<div class="session" title="This page is a static snapshot. Browsing, search, and copy actions happen locally.">' +
+          '<span class="dot"></span><span>viewer session</span><span>read-only</span>' +
+        '</div>' +
+        '<form class="search" id="sf" role="search"><input id="sq" aria-label="Search" placeholder="search…" autocomplete="off"></form>' +
+        '<button id="themebtn" class="iconbtn" aria-label="Toggle theme"></button>' +
+      '</div></header>' +
+      '<main id="main" tabindex="-1" aria-live="polite"><div class="wrap">' + skeleton() + '</div></main>' +
+      '<footer class="foot"><div>' +
+        '<span class="g">⌬</span> a peer-to-peer code forge · served from a Hyperdrive · works offline in ' +
+        '<a href="https://github.com/bigdestiny2/PearBrowser">PearBrowser</a> &amp; any browser · read-only snapshot' + fresh + ' · ' +
+        '<a href="about/">About</a> · <a href="https://github.com/bigdestiny2/Opengit">Opengit</a>' +
+      '</div></footer>'
+    var tb = byId('themebtn')
+    tb.textContent = document.documentElement.getAttribute('data-theme') === 'light' ? '☾' : '☀'
+    tb.onclick = toggleTheme
+    byId('sf').onsubmit = function (e) { e.preventDefault(); location.hash = '#/search?q=' + encodeURIComponent(byId('sq').value) }
+    // delegated copy buttons (clone panel etc.)
+    byId('main').addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('button.copy')
+      if (!b) return
+      e.preventDefault()
+      e.stopPropagation()
+      var v = b.getAttribute('data-c') || ''
+      var done = function () { var o = b.textContent; b.textContent = 'copied ✓'; setTimeout(function () { b.textContent = o }, 1400) }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(done, done)
+      else { try { var ta = document.createElement('textarea'); ta.value = v; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); done() } catch (x) {} }
+    })
+    SHELL = true
+  }
+  function setCtx (active) {
     var inRepo = !!REPO
     var br = inRepo ? (REPO.branches || []) : []
     var cur = inRepo ? currentBranch() : null
-    var opts = br.map(function (b) { return '<option value="' + esc(b.name) + '"' + (b.name === cur ? ' selected' : '') + '>' + esc(b.name) + '</option>' }).join('')
-    var tab = function (id, label, href) { return '<a href="' + href + '" class="' + (active === id ? 'on' : '') + '">' + label + '</a>' }
+    var def = inRepo ? REPO.defaultBranch : null
+    var opts = br.map(function (b) {
+      var isDef = b.name === def
+      return '<option value="' + esc(b.name) + '"' + (b.name === cur ? ' selected' : '') + '>' +
+        esc(b.name) + (isDef ? ' (default)' : ' (commits only)') + '</option>'
+    }).join('')
+    var tab = function (id, label, href) {
+      return '<a href="' + href + '"' + (active === id ? ' aria-current="page" class="on"' : '') + '>' + label + '</a>'
+    }
     var tabs = inRepo
       ? tab('code', 'Code', rurl('/files/' + encodeURIComponent(cur) + '/')) +
         tab('commits', 'Commits', rurl('/commits/' + encodeURIComponent(cur))) +
         tab('issues', 'Issues', rurl('/issues')) +
         tab('prs', 'Pull Requests', rurl('/prs'))
       : tab('home', 'Repositories', '#/')
-    var theme = document.documentElement.getAttribute('data-theme') === 'light' ? '☾' : '☀'
-    document.body.innerHTML =
-      '<header class="top"><div class="row">' +
-        '<a class="brand" href="#/"><span class="g">⌬</span> ' + esc(INDEX && INDEX.count === 1 ? INDEX.repos[0].name : 'opengit') + '</a>' +
-        (inRepo ? '<span class="muted mono crumbsep">/ ' + esc(REPO.name) + '</span>' : '') +
-        '<nav class="tabs">' + tabs + '</nav>' +
-        (br.length > 1 ? '<select id="brsel">' + opts + '</select>' : '') +
-        '<form class="search" id="sf"><input id="sq" placeholder="' + (inRepo ? 'search files / issues…' : 'search repos…') + '" autocomplete="off"></form>' +
-        '<button id="themebtn" class="iconbtn" title="toggle theme">' + theme + '</button>' +
-      '</div></header>' +
-      '<main><div class="boot">⌬ loading…</div></main>' +
-      '<footer class="foot"><div>' +
-        '<span class="g">⌬</span> a peer-to-peer code forge · served from a Hyperdrive · works offline in ' +
-        '<a href="https://github.com/bigdestiny2/PearBrowser">PearBrowser</a> &amp; any browser · read-only snapshot · ' +
-        '<a href="about/">About</a> · <a href="https://github.com/bigdestiny2/Opengit">Opengit</a>' +
-      '</div></footer>'
-    var sel = document.getElementById('brsel')
+    byId('ctx').innerHTML =
+      (inRepo ? '<span class="crumbsep muted mono">/ ' + esc(REPO.name) + '</span>' : '') +
+      '<nav class="tabs" aria-label="Sections">' + tabs + '</nav>' +
+      (br.length > 1 ? '<select id="brsel" aria-label="Branch">' + opts + '</select>' : '')
+    var sel = byId('brsel')
     if (sel) sel.onchange = function () { location.hash = rurl('/files/' + encodeURIComponent(sel.value) + '/') }
-    var sf = document.getElementById('sf')
-    if (sf) sf.onsubmit = function (e) { e.preventDefault(); location.hash = '#/search?q=' + encodeURIComponent(document.getElementById('sq').value) }
-    var tb = document.getElementById('themebtn'); if (tb) tb.onclick = toggleTheme
+    var sq = byId('sq'); if (sq) sq.placeholder = inRepo ? 'search files, issues, pull requests' : 'search repository names and descriptions'
   }
+  function chrome (active) { renderShell(); setCtx(active) }
   function currentBranch () {
     var m = location.hash.match(/^#\/r\/[^/]+\/(?:files|commits)\/([^/]+)/)
     if (m) return decodeURIComponent(m[1])
-    return REPO ? REPO.defaultBranch : 'main'
+    return defaultBranch()
+  }
+  function empty (msg, href, label) {
+    return '<div class="empty">' + esc(msg) + (href ? ' <a href="' + href + '">' + esc(label || 'go back') + '</a>' : '') + '</div>'
+  }
+  function snapshotNotice (branch) {
+    var isDefault = branch === defaultBranch()
+    return '<div class="notice">' +
+      '<strong>Read-only snapshot</strong>' +
+      '<span>This Hyperdrive view cannot create issues, push commits, or refresh itself. Use the CLI to work with the source repo.</span>' +
+      (!isDefault ? '<span>Only commit history is guaranteed for non-default branches; file trees and diffs are rendered for <code>' + esc(defaultBranch()) + '</code>.</span>' : '') +
+      '</div>'
   }
 
-  // ── forge home (the index of repos) ─────────────────────────────────────
+  // ── forge home ──────────────────────────────────────────────────────────
   function vForgeHome () {
     REPO = null; CURKEY = null; chrome('home')
     var repos = (INDEX && INDEX.repos) || []
     var head = '<div class="chip">peer-to-peer forge</div><h1>Repositories</h1>' +
       '<p class="repo-desc">' + repos.length + ' repositor' + (repos.length === 1 ? 'y' : 'ies') +
-      ' published here. Network-wide discovery is the opengit-indexer’s job (no global registry by design).</p>'
+      ' published here as a read-only snapshot. Network-wide discovery is the opengit-indexer’s job (no global registry by design).</p>'
     var list = repos.map(function (r) {
-      return '<a class="li repocard" href="#/r/' + encodeURIComponent(r.key) + '/">' +
-        '<div class="rc-main"><span class="nm">' + esc(r.name) + '</span>' +
+      var u = cloneUrl(r)
+      return '<div class="li repocard" data-repo-key="' + esc(r.key) + '">' +
+        '<div class="rc-top"><a class="rc-title" href="#/r/' + encodeURIComponent(r.key) + '/">' + esc(r.name) + '</a>' +
         '<span class="badge ' + (r.visibility === 'private' ? 'closed' : 'open') + '">' + esc(r.visibility || 'public') + '</span></div>' +
-        (r.description ? '<div class="rc-desc">' + esc(r.description) + '</div>' : '') +
-        '<div class="key">opengit://' + esc(r.key) + '</div></a>'
+        (r.description ? '<div class="rc-desc">' + esc(r.description) + '</div>' : '<div class="rc-desc dim">No description published in this snapshot.</div>') +
+        '<div class="rc-meta" id="meta-' + esc(r.key) + '"><span>snapshot metadata loading</span></div>' +
+        '<div class="rc-clone"><code>' + esc(u) + '</code><button class="copy" type="button" data-c="' + esc('git clone ' + u) + '" aria-label="Copy clone command">clone</button></div></div>'
     }).join('')
-    setMain(h('<div>' + head + '<div class="panel list">' + (list || '<div class="empty">no repositories</div>') + '</div></div>'))
+    setMain(h('<div class="wrap">' + head + '<div class="panel list">' + (list || emptyBox('No repositories in this snapshot', 'Publish a repo into this forge, then regenerate the pages bundle. This viewer is intentionally read-only.', ['opengit pages publish <repo>', 'opengit index refresh'])) + '</div></div>'))
+    repos.forEach(enrichRepoCard)
+  }
+  function enrichRepoCard (r) {
+    var el = byId('meta-' + r.key)
+    if (!el) return
+    getJSON('r/' + r.key + '/api/repo.json').then(function (repo) {
+      var bits = [
+        plural((repo.branches || []).length, 'branch', 'branches'),
+        plural((repo.tags || []).length, 'tag', 'tags')
+      ]
+      var age = repoAge(repo)
+      if (age) bits.push('snapshot ' + age)
+      el.innerHTML = bits.map(function (b) { return '<span>' + esc(b) + '</span>' }).join('')
+      return Promise.all([
+        getJSON('r/' + r.key + '/api/commits/' + safeBranch(repo.defaultBranch) + '.json').catch(function () { return { commits: [] } }),
+        getJSON('r/' + r.key + '/api/issues.json').catch(function () { return [] }),
+        getJSON('r/' + r.key + '/api/prs.json').catch(function () { return [] })
+      ]).then(function (all) {
+        var more = [
+          plural((all[0].commits || []).length, 'commit', 'commits'),
+          plural((all[1] || []).length, 'issue', 'issues'),
+          plural((all[2] || []).length, 'pull request', 'pull requests')
+        ]
+        el.innerHTML = bits.concat(more).map(function (b) { return '<span>' + esc(b) + '</span>' }).join('')
+      })
+    }).catch(function () {
+      el.innerHTML = '<span>metadata unavailable in this snapshot</span>'
+    })
   }
 
   // ── per-repo views ──────────────────────────────────────────────────────
   function commitRow (c) {
     return '<a class="li" href="' + rurl('/commit/' + c.oid) + '"><span class="nm">' + esc(c.subject) +
-      '</span><span class="mono">' + esc((c.author || '').replace(/<.*>/, '').trim()) + ' · ' + fmt(c.date) + ' · ' + short(c.oid) + '</span></a>'
+      '</span><span class="mono">' + esc((c.author || '').replace(/<.*>/, '').trim()) + ' · ' + (rel(c.date) || fmt(c.date)) + ' · ' + short(c.oid) + '</span></a>'
+  }
+  function clonePanel () {
+    var k = REPO.repoKeyZ32
+    var u = 'opengit://' + k
+    var g = 'git clone ' + u
+    function row (val) {
+      return '<div class="clone-row"><code>' + esc(val) + '</code>' +
+        '<button class="copy" type="button" data-c="' + esc(val) + '" aria-label="Copy">copy</button></div>'
+    }
+    return '<div class="clone">' + row(u) + row(g) +
+      '<p class="muted small">Read-only here. To edit, clone with the <code>git-remote-opengit</code> helper on PATH — ' +
+      '<a href="https://github.com/bigdestiny2/Opengit#60-second-quickstart">setup</a>. ' +
+      'Or browse it here, offline, in <a href="https://github.com/bigdestiny2/PearBrowser">PearBrowser</a>.</p></div>'
   }
   function vOverview () {
     chrome('code')
     var b = REPO.branches.find(function (x) { return x.name === REPO.defaultBranch }) || REPO.branches[0]
     var head = '<div class="chip">peer-to-peer · ' + esc(REPO.visibility || 'public') + '</div><h1>' + esc(REPO.name) + '</h1>' +
       (REPO.description ? '<p class="repo-desc">' + esc(REPO.description) + '</p>' : '') +
-      '<p class="key">opengit://' + esc(REPO.repoKeyZ32) + '</p>' +
+      clonePanel() +
+      snapshotNotice(b ? b.name : defaultBranch()) +
       '<div class="refbar"><a class="btn" href="' + rurl('/files/' + encodeURIComponent(b ? b.name : 'main') + '/') + '">Browse files →</a>' +
       ' <a class="btn" href="' + rurl('/commits/' + encodeURIComponent(b ? b.name : 'main')) + '">Commits</a>' +
       ' <a class="btn" href="#/">← all repos</a>' +
-      ' <span class="muted mono">' + REPO.branches.length + ' branch' + (REPO.branches.length === 1 ? '' : 'es') + ' · ' + (REPO.tags ? REPO.tags.length : 0) + ' tags</span></div>'
-    setMain(h('<div>' + head + '<div id="rm"></div></div>'))
-    if (!b) return
+      ' <span class="muted mono">' + REPO.branches.length + ' branch' + (REPO.branches.length === 1 ? '' : 'es') +
+      ' · ' + (REPO.tags ? REPO.tags.length : 0) + ' tags' +
+      (REPO.generatedAt ? ' · snapshot ' + (rel(REPO.generatedAt) || fmt(REPO.generatedAt)) : '') + '</span></div>'
+    setMain(h('<div class="wrap">' + head + '<div id="rm">' + skeleton(4) + '</div></div>'))
+    if (!b) { byId('rm').innerHTML = ''; return }
     getText(base() + 'raw/' + safeBranch(b.name) + '/README.md').then(function (t) {
-      document.getElementById('rm').innerHTML = '<div class="readme">' + md(t) + '</div>'
+      byId('rm').innerHTML = '<div class="readme">' + md(t) + '</div>'
     }).catch(function () {
       getJSON(base() + 'api/commits/' + safeBranch(b.name) + '.json').then(function (d) {
-        document.getElementById('rm').innerHTML = '<h2>Recent commits</h2><div class="panel list">' + d.commits.slice(0, 15).map(commitRow).join('') + '</div>'
-      }).catch(function () {})
+        byId('rm').innerHTML = '<h2>Recent commits</h2><div class="panel list">' + d.commits.slice(0, 15).map(commitRow).join('') + '</div>'
+      }).catch(function () { byId('rm').innerHTML = emptyBox('No README or commit data', 'This snapshot did not include a README or rendered commit list for the selected branch.', ['git clone ' + cloneUrl(REPO)]) })
     })
   }
   function vCommits (branch) {
     chrome('commits')
-    setMain(h('<div><h1>Commits <span class="muted mono">· ' + esc(branch) + '</span></h1><div id="cl" class="panel list"><div class="empty">loading…</div></div></div>'))
+    setMain(h('<div class="wrap"><h1>Commits <span class="muted mono">· ' + esc(branch) + '</span></h1>' + snapshotNotice(branch) + '<div id="cl" class="panel list">' + skeleton() + '</div></div>'))
     getJSON(base() + 'api/commits/' + safeBranch(branch) + '.json').then(function (d) {
-      document.getElementById('cl').innerHTML = d.commits.length ? d.commits.map(commitRow).join('') : '<div class="empty">no commits</div>'
-    }).catch(function () { document.getElementById('cl').innerHTML = '<div class="empty">no commit data in this snapshot</div>' })
+      byId('cl').innerHTML = d.commits.length ? d.commits.map(commitRow).join('') : emptyBox('No commits on this branch', 'The branch exists, but no commit entries were rendered into this static snapshot.', ['git clone ' + cloneUrl(REPO)])
+    }).catch(function () { byId('cl').innerHTML = emptyBox('No commit data for ' + branch, 'Try the default branch, or clone the source repo to inspect refs that were not fully rendered.', ['git clone ' + cloneUrl(REPO)], rurl('/commits/' + encodeURIComponent(defaultBranch())), 'view ' + defaultBranch()) })
   }
   function vCommit (oid) {
     chrome('commits')
-    setMain(h('<div id="cd"><div class="boot">⌬ loading commit…</div></div>'))
+    setMain(h('<div class="wrap" id="cd">' + skeleton(6) + '</div>'))
     getJSON(base() + 'api/commit/' + oid + '.json').then(function (c) {
-      document.getElementById('cd').innerHTML =
+      byId('cd').innerHTML =
         '<a href="' + rurl('/commits/' + encodeURIComponent(currentBranch())) + '" class="btn">← commits</a>' +
-        '<h1>' + esc(c.subject) + '</h1><div class="cmeta">' + esc(c.author) + ' · ' + esc(c.date) + ' · <span class="ac">' + esc(c.oid) + '</span></div>' +
+        '<h1>' + esc(c.subject) + '</h1><div class="cmeta">' + esc(c.author) + ' · ' + esc(c.date) +
+        ' · <button class="copy linkish" type="button" data-c="' + esc(c.oid) + '" aria-label="Copy commit SHA"><span class="ac">' + esc(c.oid) + '</span></button></div>' +
         (c.body ? '<div class="cmsg">' + esc(c.body) + '</div>' : '') + diffBlock(c.diff)
-    }).catch(function () { document.getElementById('cd').innerHTML = '<div class="empty">commit not in this snapshot</div>' })
+    }).catch(function () { byId('cd').innerHTML = emptyBox('Commit not in this snapshot', 'The commit may exist in the repo, but this published view only contains rendered snapshot data.', ['git clone ' + cloneUrl(REPO)], rurl('/commits/' + encodeURIComponent(defaultBranch())), 'back to commits') })
   }
   function buildTree (entries) {
     var root = { dirs: {}, files: [] }
@@ -222,6 +355,7 @@
   function treeAt (root, dir) { if (!dir) return root; var n = root; dir.split('/').forEach(function (p) { if (n && n.dirs) n = n.dirs[p] }); return n || { dirs: {}, files: [] } }
   function vFiles (branch, p) {
     chrome('code'); var sb = safeBranch(branch), cacheKey = CURKEY + '|' + sb
+    var isDefault = branch === defaultBranch()
     function paint (tree) {
       var dirPart = p
       var hit = tree.entries.find(function (e) { return e.path === p && e.type !== 'tree' })
@@ -239,53 +373,84 @@
       })
       var bodyTop = '<div class="crumb">' + crumbs.join(' / ') + (hit ? ' / <span class="ac">' + esc(p.split('/').pop()) + '</span>' : '') + '</div>'
       if (hit) {
-        setMain(h('<div>' + bodyTop + '<div class="fileview"><div class="fhead"><span>' + esc(p) + '</span><a class="mono" href="' + base() + 'raw/' + sb + '/' + encodeURI(p) + '">raw</a></div><div id="fc"><div class="empty">loading…</div></div></div></div>'))
-        if (hit.text === false) { document.getElementById('fc').innerHTML = '<div class="empty">binary or oversized — <a href="' + base() + 'raw/' + sb + '/' + encodeURI(p) + '">download raw</a></div>'; return }
+        setMain(h('<div class="wrap">' + bodyTop + '<div class="fileview"><div class="fhead"><span>' + esc(p) + '</span><span class="fhead-act"><button class="copy linkish" type="button" data-c="' + esc(p) + '" aria-label="Copy path">path</button> <a class="mono" href="' + base() + 'raw/' + sb + '/' + encodeURI(p) + '">raw</a></span></div><div id="fc">' + skeleton(4) + '</div></div></div>'))
+        if (hit.text === false) { byId('fc').innerHTML = emptyBox('Binary or oversized file', 'The file is present, but this viewer cannot render it inline.', null, base() + 'raw/' + sb + '/' + encodeURI(p), 'download raw'); return }
         getText(base() + 'raw/' + sb + '/' + encodeURI(p)).then(function (t) {
-          document.getElementById('fc').innerHTML = /\.md$/i.test(p) ? '<div class="readme" style="border:0">' + md(t) + '</div>' : codeBlock(t)
-        }).catch(function () { document.getElementById('fc').innerHTML = '<div class="empty">file not in this snapshot</div>' })
+          byId('fc').innerHTML = /\.(md|markdown)$/i.test(p) ? '<div class="readme" style="border:0">' + md(t) + '</div>' : codeBlock(t)
+          if (location.hash.indexOf('#L') > -1) { var ln = byId(location.hash.split('/').pop()); if (ln) ln.scrollIntoView() }
+        }).catch(function () { byId('fc').innerHTML = emptyBox('File not in this snapshot', 'The tree entry was listed, but the raw file was not available in the published bundle.', ['git clone ' + cloneUrl(REPO)]) })
       } else {
-        setMain(h('<div>' + bodyTop + '<div class="panel list">' + (listHtml || '<div class="empty">empty directory</div>') + '</div></div>'))
+        setMain(h('<div class="wrap">' + snapshotNotice(branch) + bodyTop + '<div class="panel list">' + (listHtml || emptyBox('Empty directory', 'No files were rendered at this path in the snapshot.')) + '</div></div>'))
       }
     }
     if (TREE[cacheKey]) return paint(TREE[cacheKey])
-    setMain(h('<div class="boot">⌬ loading tree…</div>'))
+    setMain(h('<div class="wrap">' + skeleton() + '</div>'))
     getJSON(base() + 'api/tree/' + sb + '.json').then(function (d) { TREE[cacheKey] = { entries: d.entries, map: buildTree(d.entries) }; paint(TREE[cacheKey]) })
-      .catch(function () { setMain(h('<div class="empty">no file tree for this branch in the snapshot (deep data is the default branch)</div>')) })
+      .catch(function () {
+        setMain(h('<div class="wrap">' + emptyBox(isDefault
+          ? 'No file tree in this snapshot'
+          : 'Branch files are not rendered here',
+          isDefault
+            ? 'The source repo may still have files. This static page only shows data included during publishing.'
+            : 'This static snapshot renders commit history for branches, but file trees and diffs are limited to the default branch (' + defaultBranch() + ').',
+          ['git clone ' + cloneUrl(REPO), 'git -C <repo> switch ' + branch],
+          rurl('/files/' + encodeURIComponent(defaultBranch()) + '/'), 'browse ' + defaultBranch()) + '</div>'))
+      })
   }
   function stateBadge (s) { return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>' }
   function vRepoList (kind) {
     chrome(kind)
-    setMain(h('<div><h1>' + (kind === 'issues' ? 'Issues' : 'Pull Requests') + '</h1><div id="ls" class="panel list"><div class="empty">loading…</div></div></div>'))
+    setMain(h('<div class="wrap"><h1>' + (kind === 'issues' ? 'Issues' : 'Pull Requests') + '</h1>' + snapshotNotice(defaultBranch()) + '<div id="ls" class="panel list">' + skeleton() + '</div></div>'))
     getJSON(base() + (kind === 'issues' ? 'api/issues.json' : 'api/prs.json')).then(function (arr) {
-      if (!arr.length) { document.getElementById('ls').innerHTML = '<div class="empty">no ' + kind + ' yet</div>'; return }
-      document.getElementById('ls').innerHTML = arr.map(function (it) {
+      if (!arr.length) {
+        byId('ls').innerHTML = emptyBox('No ' + (kind === 'issues' ? 'issues' : 'pull requests') + ' in this snapshot',
+          'This viewer cannot create or sync discussion. Use the CLI against the repo source to open or inspect live collaboration data.',
+          kind === 'issues' ? ['opengit issue open <repo>'] : ['opengit pr open <repo>'])
+        return
+      }
+      byId('ls').innerHTML = arr.map(function (it) {
         var id = kind === 'issues' ? it.issueId : it.prId
         return '<a class="li" href="' + rurl('/' + (kind === 'issues' ? 'issue' : 'pr') + '/' + encodeURIComponent(id)) + '">' + stateBadge(it.state || 'open') +
-          '<span class="nm">' + esc(it.title) + '</span><span class="mono">' + esc(short(it.by || it.openedBy || it.author || '')) + ' · ' + fmt(it.at || it.openedAt) + '</span></a>'
+          '<span class="nm">' + esc(it.title) + '</span><span class="mono">' + esc(short(it.by || it.openedBy || it.author || '')) + ' · ' + (rel(it.at || it.openedAt) || fmt(it.at || it.openedAt)) + '</span></a>'
       }).join('')
-    }).catch(function () { document.getElementById('ls').innerHTML = '<div class="empty">no ' + kind + ' in this snapshot</div>' })
+    }).catch(function () { byId('ls').innerHTML = emptyBox('No ' + kind + ' data', 'The collaboration index was not included when this read-only snapshot was published.', ['git clone ' + cloneUrl(REPO)]) })
   }
   function note (who, when, bodyHtml, sig) {
     return '<div class="note"><div class="nh"><span class="who">' + esc(short(who)) + '</span><span class="muted mono">' + esc(when) + '</span></div>' +
       '<div class="nb">' + bodyHtml + '</div>' + (sig ? '<div class="sig">ed25519 ✓ ' + esc(short(sig)) + '…</div>' : '') + '</div>'
   }
+  function prDiffHtml (diff) {
+    if (!diff) return ''
+    if (!diff.available) return '<h3>Changes</h3>' + empty('Diff not available in this snapshot — ' + (diff.reason || 'contributor fork not replicated here') + '.')
+    var files = (diff.files || [])
+    var add = files.reduce(function (s, f) { return s + (f.additions || 0) }, 0)
+    var del = files.reduce(function (s, f) { return s + (f.deletions || 0) }, 0)
+    var fl = files.map(function (f) {
+      return '<div class="li"><span class="badge ' + ({ A: 'open', D: 'closed', M: '', R: '' }[f.status] || '') + '">' + esc(f.status || '?') + '</span>' +
+        '<span class="nm mono">' + esc(f.path) + '</span><span class="mono"><span class="dstat-a">+' + (f.additions || 0) + '</span> <span class="dstat-d">−' + (f.deletions || 0) + '</span></span></div>'
+    }).join('')
+    return '<h3>Files changed <span class="muted mono">' + files.length + ' file' + (files.length === 1 ? '' : 's') +
+      ' · <span class="dstat-a">+' + add + '</span> <span class="dstat-d">−' + del + '</span>' +
+      (diff.base && diff.head ? ' · ' + esc(short(diff.base)) + '…' + esc(short(diff.head)) : '') + '</span></h3>' +
+      '<div class="panel list">' + fl + '</div>' +
+      (diff.patch ? diffBlock(diff.patch) : (diff.truncated ? empty('Patch too large to inline — clone the fork to view.') : ''))
+  }
   function vThread (kind, id) {
     chrome(kind === 'issue' ? 'issues' : 'prs')
-    setMain(h('<div id="th"><div class="boot">⌬ loading…</div></div>'))
+    setMain(h('<div class="wrap" id="th">' + skeleton(6) + '</div>'))
     getJSON(base() + 'api/' + kind + '/' + encodeURIComponent(id) + '.json').then(function (d) {
       var it = d[kind] || d, ev = d.events || d.comments || []
       var hdr = '<a class="btn" href="' + rurl('/' + (kind === 'issue' ? 'issues' : 'prs')) + '">← ' + (kind === 'issue' ? 'issues' : 'pull requests') + '</a>' +
         '<h1>' + esc(it.title) + ' ' + stateBadge(it.state || 'open') + '</h1>' +
         (kind === 'pr' ? '<div class="cmeta">' + esc(it.fromRepo ? short(it.fromRepo) + ':' + (it.fromRef || '') + ' → ' + (it.toRef || '') : '') + '</div>' : '')
-      var thread = note(it.by || it.author || it.openedBy, fmt(it.at || it.openedAt), md(it.body || '') || '<span class="dim">(no description)</span>', it.sig)
+      var thread = note(it.by || it.author || it.openedBy, rel(it.at || it.openedAt) || fmt(it.at || it.openedAt), md(it.body || '') || '<span class="dim">(no description)</span>', it.sig)
       ev.forEach(function (e) {
         if (e.type && /open$/.test(e.type)) return
         var label = e.type ? e.type.replace(/^(issue|pr)\./, '') : 'comment'
-        thread += note(e.by, fmt(e.at), e.body ? md(e.body) : '<span class="dim">— ' + esc(label) + (e.reason ? ': ' + esc(e.reason) : '') + (e.verdict ? ': ' + esc(e.verdict) : '') + '</span>', e.sig)
+        thread += note(e.by, rel(e.at) || fmt(e.at), e.body ? md(e.body) : '<span class="dim">— ' + esc(label) + (e.reason ? ': ' + esc(e.reason) : '') + (e.verdict ? ': ' + esc(e.verdict) : '') + '</span>', e.sig)
       })
-      document.getElementById('th').innerHTML = hdr + '<div class="thread">' + thread + '</div>'
-    }).catch(function () { document.getElementById('th').innerHTML = '<div class="empty">not in this snapshot</div>' })
+      byId('th').innerHTML = hdr + '<div class="thread">' + thread + '</div>' + (kind === 'pr' ? prDiffHtml(d.diff) : '')
+    }).catch(function () { byId('th').innerHTML = emptyBox('Thread not in this snapshot', 'The issue or pull request may exist outside this published static bundle.', null, rurl('/' + (kind === 'issue' ? 'issues' : 'prs')), 'back') })
   }
   function vSearch (q) {
     q = (q || '').toLowerCase()
@@ -293,12 +458,12 @@
     ;(INDEX && INDEX.repos || []).filter(function (r) { return (r.name + ' ' + (r.description || '')).toLowerCase().indexOf(q) > -1 }).forEach(function (r) {
       res.push('<a class="li" href="#/r/' + encodeURIComponent(r.key) + '/"><span class="ico">⌬</span><span class="nm">repo: ' + esc(r.name) + '</span></a>')
     })
-    if (REPO) { chrome('code') } else { chrome('home') }
-    setMain(h('<div><h1>Search <span class="muted mono">· ' + esc(q) + '</span></h1><div id="sr" class="panel list">' + (res.length ? res.join('') : '') + '<div class="empty" id="se">' + (res.length ? '' : 'searching…') + '</div></div></div>'))
-    if (!REPO) { if (!res.length) document.getElementById('se').textContent = 'no matching repositories'; else document.getElementById('se').remove(); return }
+    chrome(REPO ? 'code' : 'home')
+    setMain(h('<div class="wrap"><h1>Search <span class="muted mono">· ' + esc(q || 'all') + '</span></h1><p class="repo-desc">Search covers names and descriptions on the forge home; inside a repo it also checks default-branch file paths, issue titles, and pull request titles included in this snapshot.</p><div id="sr" class="panel list">' + (res.join('') || '') + '<div class="empty" id="se">' + (res.length ? '' : (REPO ? 'searching snapshot…' : 'no matching repositories')) + '</div></div></div>'))
+    if (!REPO) { if (res.length) { var s0 = byId('se'); if (s0) s0.remove() } return }
     var sb = safeBranch(REPO.defaultBranch), pend = 3
-    function step () { if (--pend === 0) { var se = document.getElementById('se'); if (se) { if (document.querySelectorAll('#sr .li').length) se.remove(); else se.textContent = 'no matches' } } }
-    var add = function (html) { var sr = document.getElementById('sr'); var se = document.getElementById('se'); sr.insertBefore(h(html), se) }
+    function step () { if (--pend === 0) { var se = byId('se'); if (se) { if (document.querySelectorAll('#sr .li').length) se.remove(); else se.textContent = 'no matches' } } }
+    var add = function (html) { var sr = byId('sr'); var se = byId('se'); if (sr && se) sr.insertBefore(h(html), se) }
     getJSON(base() + 'api/tree/' + sb + '.json').then(function (d) {
       d.entries.filter(function (e) { return e.type !== 'tree' && e.path.toLowerCase().indexOf(q) > -1 }).slice(0, 50).forEach(function (e) {
         add('<a class="li" href="' + rurl('/files/' + encodeURIComponent(REPO.defaultBranch) + '/' + encodeURI(e.path)) + '"><span class="ico">·</span><span class="nm">' + esc(e.path) + '</span></a>')
@@ -328,10 +493,10 @@
     if (rm) {
       var key = decodeURIComponent(rm[1]), sub = rm[2] || '/'
       if (REPO && CURKEY === key) return dispatchRepo(sub)
-      setMain(h('<div class="boot">⌬ loading repo…</div>'))
+      chrome('code'); setMain(h('<div class="wrap">' + skeleton(6) + '</div>'))
       getJSON('r/' + key + '/api/repo.json').then(function (r) {
         REPO = r; CURKEY = key; document.title = r.name + ' — Opengit'; dispatchRepo(sub)
-      }).catch(function () { REPO = null; CURKEY = null; chrome('home'); setMain(h('<div class="empty">repo not in this snapshot</div>')) })
+      }).catch(function () { REPO = null; CURKEY = null; chrome('home'); setMain(h('<div class="wrap">' + empty('Repo not in this snapshot.', '#/', 'all repositories') + '</div>')) })
       return
     }
     return vForgeHome()
@@ -341,9 +506,10 @@
   getJSON('api/index.json').then(function (idx) {
     INDEX = idx
     document.title = (idx.count === 1 ? idx.repos[0].name : 'opengit forge') + ' — Opengit'
+    renderShell()
     window.addEventListener('hashchange', route)
     route()
   }).catch(function () {
-    APP.innerHTML = '<div class="boot">Could not load <code>api/index.json</code>.<br>This drive is not an Opengit forge snapshot, or it has not replicated yet.</div>'
+    document.body.innerHTML = '<div class="boot">Could not load <code>api/index.json</code>.<br>This drive is not an Opengit forge snapshot, or it has not replicated yet.</div>'
   })
 })()
