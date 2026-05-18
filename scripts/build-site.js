@@ -466,6 +466,13 @@ function landingPage () {
   </div>
 </section>
 
+<section class="wrap section center">
+  <p class="chip">● LIVE NOW</p>
+  <h2>Browse the live forge → <a href="https://opengit.tech/">opengit.tech</a></h2>
+  <p class="lede">opengit, p2p-hiverelay and pearbrowser — Opengit hosting itself. No server, no GitHub.</p>
+  <div class="cta center"><a class="btn primary" href="https://opengit.tech/">Open opengit.tech →</a></div>
+</section>
+
 <section class="band">
   <div class="wrap">
     <pre class="term"><span class="c">$</span> opengit init my-project        <span class="dim"># → opengit://&lt;key&gt;</span>
