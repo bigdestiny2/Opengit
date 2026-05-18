@@ -1,6 +1,6 @@
 # Live Test Plan — first real two-machine collaboration (with Ian)
 
-> The milestone Opengit has never reached: real second machine, real network, real collaboration. Ian = the HiveRelay maintainer (iainkek). Collab target = **Opengit's own repo** (dogfood from the start). Prep posture = **close T1 + scripted solo dry-run before Ian is involved**.
+> ✅ **MILESTONE REACHED (2026-05-18).** Real second machine, real Hyperswarm DHT, real collaboration — a signed issue + merged PR crossed between two physical machines. See `STAGE-4-LIVE-RESULT.md`. Ian (`iainkek`) = second machine + code contributor. **You** = repo owner + relay operator. Collab target = **Opengit's own repo** (dogfood from the start). Prep posture that delivered it = **close T1 + scripted solo dry-run before Ian was involved** (caught 8 real bugs ⇒ the live run was "confirm," not "discover").
 >
 > Cardinal rule: **add exactly one unproven variable per stage.** A stacked failure tells you nothing.
 
@@ -117,6 +117,7 @@ A change Ian makes on his machine lands in your repo on yours — over the real 
 
 ## Status
 
+- [x] 🎉 **STAGES 1–4 — LIVE PASSED (2026-05-18, real two machines, real Hyperswarm DHT).** Ian (`iainkek`) on a separate physical machine opened a **signed issue + signed PR** on Opengit's own repo; they replicated owner-ward over the **public DHT (no `OPENGIT_BOOTSTRAP` needed)**; the owner closed the issue + merged the PR. Full forge loop ~6 s once admitted (the ~16-min gap was the human blob exchange, not protocol). Maintainer-side evidence conclusive. **Definition of Done met — Opengit is a forge.** Full record: `STAGE-4-LIVE-RESULT.md`. Open ticks (honest): standalone `git clone opengit://` over the real DHT is a *separate* tick (do while both online); Stages 2/3 (cross-NAT, owner-offline) not exercised by this run; contributor-side banner to be appended when Ian pastes it.
 - [x] **0.1 — DONE.** Deterministic gate test green (`packages/git-remote-opengit/test/integration/clone.test.js`): real `git push opengit://` through the real helper stores refs+objects; real `git clone` of the rebuilt shadow yields a byte-correct tree. Subprocess-over-DHT clone is a documented skip (synthetic single-node DHT can't cross-process rendezvous — that's the live test's job). **Stage 0.1 caught and fixed SIX real bugs that would each have killed the live session:**
   1. Helper never called `repo.refresh()` → every clone saw an empty repo (v0.0.11 manifest contract).
   2. Helper's peer-gate ran unconditionally → owner `git push` to a fresh repo failed "no peers".
