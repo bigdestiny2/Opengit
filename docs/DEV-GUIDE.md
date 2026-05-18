@@ -73,6 +73,30 @@ is exactly what the live two-machine test (TESTING.md) covers.
 > fixed **8 real bugs** that would each have killed the live session. If you
 > add an unproven path, add a dry-run for it. One unproven variable at a time.
 
+## Local preview (inspect the site + web app in a browser)
+
+Both web surfaces are relative-path + zero-external, so they render
+identically over plain HTTP and at `hyper://<key>/`. Inspect them locally:
+
+```bash
+npm run preview          # build site + web-app (this repo) → serve .preview/
+#   → http://localhost:8088/site/   the landing site
+#   → http://localhost:8088/app/    the web app (full forge UI for THIS repo)
+```
+
+Pieces (all zero-dependency, local-only, no telemetry):
+
+- `scripts/build-site.js` — generate the static landing `site/`.
+- `scripts/preview-webapp.js` — seed a throwaway forge from this repo's
+  real `.git` (proven shadow path), `renderApp` it into `.preview/app`.
+- `scripts/serve-local.js` — a tiny `node:http` static server.
+
+`npm run preview:site` / `preview:app` / `preview:serve` run the steps
+individually. `.preview/` and `.site-drive/` are gitignored — nothing
+preview-related is committed. To publish for real (web host or a
+Hyperdrive for PearBrowser) see `scripts/publish-site.js` and
+`opengit pages publish <repo> --app`.
+
 ## `opengit-core` public API (the essentials)
 
 `require('opengit-core')` exports: `OpengitRepo`, `OpengitForge`,

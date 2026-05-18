@@ -9,7 +9,12 @@
   ],
   "scripts": {
     "test": "node --import ./test/setup.js --test --test-timeout=45000 packages/*/test/*.test.js packages/*/test/integration/*.test.js",
-    "demo": "node examples/end-to-end.js"
+    "demo": "node examples/end-to-end.js",
+    "site": "node scripts/build-site.js",
+    "preview:site": "node scripts/build-site.js",
+    "preview:app": "node scripts/preview-webapp.js",
+    "preview:serve": "node scripts/serve-local.js --dir .preview --port 8088",
+    "preview": "node scripts/build-site.js && node scripts/preview-webapp.js && node scripts/serve-local.js --dir .preview --port 8088"
   },
   "engines": {
     "node": ">=20"

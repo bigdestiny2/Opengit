@@ -11,3 +11,4 @@ coverage/
 tmp/
 live-admit.txt
 .site-drive/
+.preview/
