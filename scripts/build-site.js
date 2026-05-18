@@ -25,6 +25,7 @@ const DOCS = path.join(SITE, 'docs')
 // paths in sync with the repo layout — a missing file throws the build.
 const DOC_MAP = [
   { src: 'README.md',                         out: 'docs/readme.html',                 title: 'README',                     navLabel: 'README' },
+  { src: 'docs/WHY-OPENGIT.md',               out: 'docs/why-opengit.html',            title: 'Why Opengit',                navLabel: 'Why' },
   { src: 'docs/USER-GUIDE.md',                out: 'docs/user-guide.html',             title: 'User Guide',                 navLabel: 'User Guide' },
   { src: 'docs/CLI.md',                       out: 'docs/cli.html',                    title: 'CLI Reference',              navLabel: 'CLI' },
   { src: 'docs/ARCHITECTURE.md',              out: 'docs/architecture.html',           title: 'Architecture',               navLabel: 'Architecture' },
@@ -463,6 +464,7 @@ function landingPage () {
     available even when the owner is offline. Built on the Pear&nbsp;/&nbsp;Bare&nbsp;/&nbsp;Holepunch stack.</p>
     <div class="cta">
       <a class="btn primary" href="${root}docs/quickstart.html">Quickstart →</a>
+      <a class="btn" href="${root}docs/why-opengit.html">Why Opengit</a>
       <a class="btn" href="${root}docs/user-guide.html">User Guide</a>
       <a class="btn" href="${root}docs/architecture.html">How it works</a>
       <a class="btn ghost" href="https://github.com/bigdestiny2/Opengit">Source</a>

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why Opengit — Opengit</title>
+<meta name="description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="Why Opengit — Opengit">
+<meta property="og:description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%E2%8C%AC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap nav-row">
+    <a href="../index.html" class="brand"><span class="glyph">⌬</span> opengit</a>
+    <nav class="topnav">
+      <a href="../docs/quickstart.html">Quickstart</a>
+      <a href="../docs/user-guide.html">Docs</a>
+      <a href="../docs/architecture.html">Architecture</a>
+      <a href="https://github.com/bigdestiny2/Opengit">GitHub</a>
+    </nav>
+  </div>
+</header>
+<nav class="doc-nav"><div class="wrap nav-scroll"><a href="../docs/quickstart.html">Quickstart</a><a href="../docs/readme.html">README</a><a href="../docs/why-opengit.html" class="active">Why</a><a href="../docs/user-guide.html">User Guide</a><a href="../docs/cli.html">CLI</a><a href="../docs/architecture.html">Architecture</a><a href="../docs/dev-guide.html">Dev Guide</a><a href="../docs/relay-operators.html">Relays</a><a href="../docs/contributing.html">Contributing</a><a href="../docs/roadmap.html">Roadmap</a><a href="../docs/competitive-landscape.html">Landscape</a><a href="../docs/spec.html">Spec</a><a href="../docs/licensing.html">Licensing</a><a href="../docs/stage-4-live-result.html">Live Result</a><a href="../docs/testing.html">Testing</a><a href="../docs/hiverelay-integration.html">HiveRelay</a><a href="../docs/pearbrowser-integration.html">PearBrowser</a><a href="../docs/feasibility.html">Hist · Feasibility</a><a href="../docs/decentralization-audit.html">Hist · Audit</a><a href="../docs/deep-audit.html">Hist · Deep Audit</a><a href="../docs/improvement-research.html">Hist · Research</a><a href="../docs/state.html">Hist · State</a><a href="../docs/live-test-plan.html">Hist · Test Plan</a></div></nav>
+<main class="doc-page wrap">
+<h1>Why Opengit</h1>
+<p>Opengit is a peer-to-peer code forge: git hosting, issues, and pull requests with <strong>no servers, no accounts, no company, and no token</strong> — built on the Holepunch/Pear stack. This page states its advantages plainly, each tied to evidence or a concrete contrast with the alternatives surveyed in <a href="competitive-landscape.html">COMPETITIVE-LANDSCAPE.md</a>. It also states, just as plainly, what Opengit is <em>not</em> good at yet.</p>
+<h2>The one-sentence version</h2>
+<p>A change a collaborator makes on their machine lands in your repo on yours — over the open internet, through plain <code>git</code>, with a signed issue and a merged PR — and <strong>this is proven, not promised</strong> (two physical machines, real Hyperswarm DHT, 2026-05-18: <a href="stage-4-live-result.html">STAGE-4-LIVE-RESULT.md</a>).</p>
+<h2>Advantages</h2>
+<h3>1. Genuinely serverless — the keypair <em>is</em> the identity</h3>
+<p>There is no instance to run, no account to create, no admin, no DNS, no hosting bill. Your Ed25519 identity is yours; a repo is addressed by its key. Compare:</p>
+<ul><li><strong>GitHub/GitLab/Gitea</strong>: a company or an operator owns the server and your identity.</li><li><strong>Forgejo/ForgeFed (federation)</strong>: identity is <code>account@server</code> — if the server dies, the identity dies (the Mastodon failure mode).</li><li><strong>Tangled (atproto)</strong>: better, but identity still anchors on a PDS and code lives on server &quot;knots&quot;.</li><li><strong>Opengit</strong>: no server exists to outlive you or to be seized, rate-limited, or shut down. Identity is portable by construction.</li></ul>
+<h3>2. Zero-config discovery (DHT) — not &quot;add a seed node&quot;</h3>
+<p>A repo is reachable by its key over the <strong>Hyperswarm DHT</strong>. No tracker, no bootstrap list to curate, no relay required to <em>find</em> peers.</p>
+<blockquote><p>Notable: <strong>Radicle — the only other production true-P2P forge — deliberately avoids a DHT</strong> and requires manually-configured seed nodes. Zero-config reachability by key is a real, concrete UX advantage over the single most comparable project.</p></blockquote>
+<h3>3. Collaboration travels <em>with</em> the repo</h3>
+<p>Issues and pull requests are <strong>signed (Ed25519) operations in an Autobase</strong> that replicates alongside the code. Clone the repo and you have its issues and PRs — offline, verifiable, no separate service.</p>
+<ul><li>Federated forges still <strong>cannot federate issues/PRs at all</strong> in 2026 (only stars). Opengit's cross-party issue/PR loop is <em>live-proven</em>.</li><li>This avoids the <strong>Pijul/Nest trap</strong> (decentralized code, but collaboration re-centralized on a website).</li></ul>
+<h3>4. No blockchain, no token, no gas</h3>
+<p>Opengit deliberately has none. The competitive research is unambiguous on why this is correct, not a gap: every blockchain forge is dead, abandoned, or token-first with negligible developer use — and <strong>Radicle itself abandoned its on-chain components</strong>. Git objects never fit on-chain; the chain is dead weight for a forge. Opengit gets identity, replication, and signed collaboration from Ed25519 + Hyperswarm + Autobase with no gas, no RPC dependency, and no speculative tokenomics.</p>
+<h3>5. Survives the owner being offline — without a central server</h3>
+<p><code>opengit serve --mirror</code> asks a <strong>blind-peer / HiveRelay</strong> mirror to pin the repo's cores, so it stays cloneable while your laptop is closed. This is the same idea as Radicle's seed nodes, but it rides existing <strong>HiveRelay</strong> infrastructure and standard blind-peering — you (or anyone) can operate a relay; no project-blessed seed list.</p>
+<h3>6. Holepunch/Pear-native — an empty, modern lane</h3>
+<p>Opengit is built directly on the maintained Holepunch stack (Hyperswarm, Hypercore, Autobase, Hyperblobs) and can ship as a <strong>Pear application</strong> with P2P distribution and updates — no app store, no download server. The only prior P2P-git attempt on this lineage (<code>hypergit</code>, Dat-era) died in 2018. <strong>No one is doing serious P2P git on Holepunch/Hypercore today.</strong> This is green field, on a runtime that is actively developed.</p>
+<h3>7. Private repos with cold-bootstrap recovery</h3>
+<p>A private repo is encrypted; a collaborator you invite can recover the content key over the swarm with <strong>only their identity and the repo key</strong> (the v0.0.11 manifest &quot;A1&quot; design). No key-escrow server, no out-of-band file to lose. Owners can self-recover from a backup of the repo alone.</p>
+<h3>8. Proven by adversarial pre-flight, not by demo</h3>
+<p>The live milestone worked on the first real two-machine attempt because solo in-harness dry-runs <strong>caught and fixed 8 real bugs first</strong> (6 in the git-data path, an Autobase local-core deadlock, and a cross-party silo/empty-moderator bug). The operating rule — <em>one unproven variable at a time, every risky path gets a dry-run that asserts a concrete outcome before it runs live</em> — is encoded in the project (<a href="roadmap.html">ROADMAP.md</a>). The result is reproducible: <code>node scripts/dry-run-collab.js</code> → <code>DRY-RUN PASSED — 9/9</code>.</p>
+<h2>Honest limitations (so the above is trustworthy)</h2>
+<p>An advantages page that hides the gaps is marketing. These are real and tracked in <a href="roadmap.html">ROADMAP.md</a>:</p>
+<ul><li><strong>Spam/moderation on a permissionless append log is unsolved</strong> — the hardest open problem, and one Radicle and git-bug also hit. The owner/moderator-gated canonical view (A1) is the right foundation; it needs hardening before untrusted public use.</li><li><strong>Non-CLI access is not there yet.</strong> Today it's a CLI + keypair. Every git-native tool that stalled, stalled on this. PearBrowser is the answer and must stay a first-class priority.</li><li><strong>One-shot ergonomics.</strong> <code>opengit issue</code>/<code>pr</code> are local-only; cross-party ops go through <code>opengit collab</code>. A long-running <code>opengit daemon</code> is the planned fix.</li><li><strong>Ordering uses wall-clock timestamps.</strong> Issue/PR ops stamp <code>Date.now()</code>; the proven-correct approach is a logical (Lamport/HLC) clock. Tracked follow-up.</li><li><strong>Maturity gap vs Radicle.</strong> Radicle has years of hardening, a desktop app, and real users. Opengit is early and dogfooding its own repo.</li><li><strong>NAT traversal at scale is unproven</strong> (Stages 2/3). Expected to need a relay for hard NAT pairs — by design, not a surprise.</li></ul>
+<h2>When <em>not</em> to use Opengit (today)</h2>
+<ul><li>You need a polished web UI for non-technical contributors <strong>now</strong> → use GitHub/GitLab, or watch PearBrowser.</li><li>You need battle-tested P2P with a desktop app today → evaluate <strong>Radicle</strong> (and note the architectural convergence — the approaches agree).</li><li>You want public, anonymous, drive-by contributions at scale → the moderation story isn't hardened yet.</li></ul>
+<h2>When Opengit is the right choice</h2>
+<ul><li>You want code + issues + PRs with <strong>no server, no account, no company, no token</strong> in the trust path.</li><li>You want a repo that stays reachable by key over the open internet and survives the owner going offline via a relay you control.</li><li>You're on or want the <strong>Pear/Holepunch</strong> ecosystem and value shipping the forge itself as a P2P app.</li><li>You value <strong>proof over promises</strong> — the core loop is demonstrated end to end across real machines, with the failure modes found and fixed first.</li></ul>
+</main>
+<footer>
+  <div class="wrap">
+    <p><span class="glyph">⌬</span> <strong>opengit</strong> — a peer-to-peer code forge.</p>
+    <p class="muted">Apache-2.0 (AGPL only via the explicit <code>--use-hiverelay</code> opt-in) · No telemetry · No phone-home · No foundation · <a href="https://github.com/bigdestiny2/Opengit">source</a></p>
+  </div>
+</footer>
+</body>
+</html>
