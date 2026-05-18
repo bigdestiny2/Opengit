@@ -54,20 +54,38 @@ What each line proves, end-to-end across two physical machines on the real DHT:
 The whole forge loop ran in ~6 s once admitted. The ~16-min gap between
 `online` and `ADMITTED` is the out-of-band human blob exchange, not protocol.
 
-## Contributor-side seal (to attach when Ian pastes it)
+## Contributor-side seal — CONFIRMED ✅ (Ian's terminal, 2026-05-18)
 
-Ian's contributor process is expected to print and exit 0:
+Ian's contributor process printed the banner and **exited 0**. IDs and timing
+match the owner log exactly — a fully sealed bidirectional round trip across
+two physical machines on the real Hyperswarm DHT:
 
 ```
-✓ FULL BIDIRECTIONAL FORGE LOOP CONFIRMED ON THE REAL NETWORK
-  issue 7x7xzg8fk0q7 → CLOSED by maintainer
-  PR    pr-hr1xbgi280 → MERGED by maintainer
-Opengit is a forge. 🎉
+[08:46:28] contributor online as profile "default", replicating nibsqgk71owjouyy…
+[08:46:29] manifest replicated (issues/PR autobase keys present)
+[08:46:29] CONTRIB_BLOB=eyJpc3N1ZXMiOiJkMjg2…  (issues=d286498f… prs=12bb22ac…)
+[08:46:29] waiting for the maintainer to admit you (syncCollab)…
+[08:55:41] admitted: issues=true prs=true
+[08:55:41] opened signed issue 7x7xzg8fk0q7 + PR pr-hr1xbgi280 — waiting for maintainer to close + merge…
+[08:55:47] ✓ FULL BIDIRECTIONAL FORGE LOOP CONFIRMED ON THE REAL NETWORK
+[08:55:47]   issue 7x7xzg8fk0q7 → CLOSED by maintainer
+[08:55:47]   PR    pr-hr1xbgi280 → MERGED by maintainer
+[08:55:47] Opengit is a forge. 🎉
 ```
 
-> _Status: maintainer-side evidence above is conclusive that Ian's signed
-> entries crossed the network and were moderated. Ian's banner confirms he
-> also observed the close/merge round-trip back. Paste to append here._
+Cross-check — both terminals agree to the second:
+
+| Event | Owner (`Locals-Mac-Studio`) | Contributor (Ian) |
+|---|---|---|
+| handshake | `08:55:39 ADMITTED contributor` | `08:55:41 admitted: issues=true prs=true` |
+| signed issue+PR | `08:55:45 CLOSED 7x7xzg8fk0q7` / `MERGED pr-hr1xbgi280` | `08:55:41 opened 7x7xzg8fk0q7 + pr-hr1xbgi280` |
+| round-trip back | — | `08:55:47` observed CLOSE+MERGE → banner → **exit 0** |
+
+Identical issue/PR IDs on both machines; the blob Ian generated
+(`issues=d286498f… prs=12bb22ac…`) is exactly the one the owner admitted;
+~2 s per replication hop. The contributor's signed entries were moderated by
+the owner **and** the owner's close+merge replicated back to the contributor.
+Both directions, two machines, real network. **Stage 4 fully sealed.**
 
 ## Honest scope / still-open ticks
 
