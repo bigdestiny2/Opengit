@@ -67,6 +67,33 @@ repo available across an owner-offline window, reproduced twice.
 - **Release engineering.** Package version is still `0.0.1`; versioning,
   changelog, and `pear://` distribution are open.
 
+### From the competitive-landscape research ([COMPETITIVE-LANDSCAPE.md](COMPETITIVE-LANDSCAPE.md))
+
+Derived from how Radicle / git-bug / Fossil solved (or failed) the same
+problems. Not blocking the self-host milestone, but each is a known
+correctness or adoption risk for untrusted/public use.
+
+- **Logical clocks for issue/PR ordering (concrete bug).** `issues.js` /
+  `prs.js` stamp events with wall-clock `at: Date.now()`. Every
+  proven-correct prior system (Radicle COBs, git-bug) orders ops by a
+  **Lamport / hybrid-logical clock**, not wall time — wall-clock causes
+  out-of-order and divergent state folds across peers with skewed clocks.
+  Add an HLC to the signed op, fold state by it, keep `at` as display-only.
+- **Local SQLite projection for issue/PR queries.** git-bug's recurring
+  pain is losing relational queries (labels/search/cross-refs). Build a
+  materialized index rebuilt by replaying the Autobase; never query the log
+  directly. Fossil's SQLite projection is the model.
+- **Moderation/spam hardening on the permissionless append log.** The
+  single hardest open problem, hit by Radicle *and* git-bug. Make the
+  owner/moderator (A1) curation explicit: anyone may append; the **canonical
+  view** is what owner/delegate **signed moderation ops** admit; untrusted
+  ops replicate but stay hidden by default. Moderation itself must be a
+  signed, append-only, auditable, reversible op.
+- **Non-CLI surface is adoption-critical, not optional.** Every git-native
+  tracker stalled because non-developers can't use a keypair+CLI. Treat
+  PearBrowser (read + light write) as a first-class milestone, not an
+  afterthought.
+
 ## Operating principle
 
 One unproven variable at a time. Every risky path gets a solo in-harness
