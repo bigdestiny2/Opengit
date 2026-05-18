@@ -365,4 +365,14 @@ function isProbablyText (buf) {
   return true
 }
 
-module.exports = { render, DEFAULT_OPTIONS }
+module.exports = {
+  render,
+  DEFAULT_OPTIONS,
+  // Reused by lib/app.js (the SPA / JSON-API emitter) — same proven
+  // shadow-driven repo introspection, no duplication.
+  readCommits,
+  readCommitDetail,
+  readReadme,
+  walkTree,
+  isProbablyText
+}

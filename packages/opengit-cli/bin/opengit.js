@@ -605,14 +605,15 @@ async function cmdUnseed (args) {
 
 async function cmdPages (args) {
   const sub = args[0]
-  if (!sub) throw new Error('usage: opengit pages <publish|url|watch> <repo> [--encrypted]')
+  if (!sub) throw new Error('usage: opengit pages <publish|url|watch> <repo> [--app] [--encrypted]')
 
   // Shared flag parsing.
   function parseFlags (start) {
-    const flags = { encrypted: false, debounceMs: 500 }
+    const flags = { encrypted: false, debounceMs: 500, app: false }
     const positional = []
     for (let i = start; i < args.length; i++) {
       if (args[i] === '--encrypted' || args[i] === '--force-publish') flags.encrypted = true
+      else if (args[i] === '--app' || args[i] === '--web-app') flags.app = true
       else if (args[i] === '--debounce-ms' && i + 1 < args.length) flags.debounceMs = parseInt(args[++i], 10)
       else positional.push(args[i])
     }
@@ -622,7 +623,7 @@ async function cmdPages (args) {
   if (sub === 'publish') {
     const { flags, positional } = parseFlags(1)
     const repoRef = positional[0]
-    if (!repoRef) throw new Error('usage: opengit pages publish <repo> [--encrypted]')
+    if (!repoRef) throw new Error('usage: opengit pages publish <repo> [--app] [--encrypted]')
     const repoKey = resolvePetname('repos', repoRef)
     await withForge(async (forge) => {
       const repo = await forge.openRepo(repoKey)
@@ -633,8 +634,8 @@ async function cmdPages (args) {
         )
         process.exit(2)
       }
-      process.stdout.write(`rendering pages for opengit://${repo.keyZ32} ...\n`)
-      const result = await forge.publishToPagesDrive(repo, { encrypted: flags.encrypted })
+      process.stdout.write(`rendering ${flags.app ? 'web app' : 'pages'} for opengit://${repo.keyZ32} ...\n`)
+      const result = await forge.publishToPagesDrive(repo, { encrypted: flags.encrypted, app: flags.app })
       process.stdout.write(`wrote ${result.written} files to pages drive\n`)
       process.stdout.write(`drive key (hex): ${result.driveKeyHex}\n`)
       process.stdout.write(`hyper url:       ${result.hyperUrl}\n`)
@@ -673,7 +674,7 @@ async function cmdPages (args) {
   if (sub === 'watch') {
     const { flags, positional } = parseFlags(1)
     const repoRef = positional[0]
-    if (!repoRef) throw new Error('usage: opengit pages watch <repo> [--encrypted] [--debounce-ms N]')
+    if (!repoRef) throw new Error('usage: opengit pages watch <repo> [--app] [--encrypted] [--debounce-ms N]')
     const repoKey = resolvePetname('repos', repoRef)
     const forge = new OpengitForge({
       storage: STORAGE_DIR,
@@ -690,7 +691,7 @@ async function cmdPages (args) {
         await forge.close()
         process.exit(2)
       }
-      watcher = await forge.watchPages(repo, { encrypted: flags.encrypted, debounceMs: flags.debounceMs })
+      watcher = await forge.watchPages(repo, { encrypted: flags.encrypted, debounceMs: flags.debounceMs, app: flags.app })
       process.stdout.write(`watching opengit://${repo.keyZ32} (debounce ${flags.debounceMs}ms)\n`)
       process.stdout.write('press ctrl-c to stop\n')
       const handleSig = async () => {
@@ -710,7 +711,7 @@ async function cmdPages (args) {
     }
   }
 
-  throw new Error('usage: opengit pages <publish|url|watch> <repo> [--encrypted]')
+  throw new Error('usage: opengit pages <publish|url|watch> <repo> [--app] [--encrypted]')
 }
 
 async function cmdPR (args) {
@@ -1272,9 +1273,13 @@ Subcommands:
                                syncCollab → signed issues/PRs both ways + owner
                                close/merge. maintainer/contributor are long-
                                lived; keys/admit/sync are one-shots.
-  pages <publish|url|watch> <repo> [--encrypted] [--debounce-ms N]
-                               Render repo HEAD as a static-HTML Hyperdrive
-                               browseable from PearBrowser via hyper://<key>/.
+  pages <publish|url|watch> <repo> [--app] [--encrypted] [--debounce-ms N]
+                               Render repo HEAD into a Hyperdrive browseable
+                               from PearBrowser via hyper://<key>/ (and any
+                               browser, offline). Default: static HTML site.
+                               --app: a slick single-page WEB APP + static
+                               JSON API (file tree, diffs, issues, PRs,
+                               search) — same bundle, same dual-deploy.
                                watch: foreground daemon, auto-republish on
                                ref updates. --encrypted: AEAD-encrypt drive
                                with the same content key as the repo (private

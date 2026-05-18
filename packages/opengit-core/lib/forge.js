@@ -558,7 +558,10 @@ class OpengitForge {
   //
   // Lazy-loads opengit-pages + hyperdrive so opengit-core doesn't pay the
   // cost when a caller never publishes.
-  async publishToPagesDrive (repo, { options = {}, encrypted = false } = {}) {
+  // `app: true` emits the single-page web app + static JSON API
+  // (opengit-pages renderApp — the "B++" shape) instead of the static
+  // HTML site. Same drive, same encryption rules.
+  async publishToPagesDrive (repo, { options = {}, encrypted = false, app = false } = {}) {
     let pages, Hyperdrive
     try { pages = require('opengit-pages') } catch (err) {
       throw new Error('publishToPagesDrive requires opengit-pages. Install it in your workspace.')
@@ -593,9 +596,10 @@ class OpengitForge {
       throw new Error('publishToPagesDrive requires a profile-aware forge (profileName set)')
     }
 
+    const renderer = app && pages.renderApp ? pages.renderApp : pages.render
     let written = 0
     try {
-      for await (const { path: p, bytes } of pages.render({
+      for await (const { path: p, bytes } of renderer({
         repo, profileName: this.profileName, shadowRoot, options
       })) {
         await drive.put(p, bytes)
@@ -626,7 +630,7 @@ class OpengitForge {
   // repos: subscribes on the autobase view's refs sub-bee. The watcher is
   // best-effort — if a renderer call throws (e.g. transient git error), we
   // log to stderr and keep watching. Backoff is bounded.
-  async watchPages (repo, { encrypted = false, debounceMs = 500 } = {}) {
+  async watchPages (repo, { encrypted = false, debounceMs = 500, app = false } = {}) {
     if (!repo.opened) await repo.ready()
     let stopped = false
     let pending = false
@@ -639,7 +643,7 @@ class OpengitForge {
       timer = setTimeout(async () => {
         if (stopped) { pending = false; return }
         try {
-          await this.publishToPagesDrive(repo, { encrypted })
+          await this.publishToPagesDrive(repo, { encrypted, app })
         } catch (err) {
           process.stderr.write(`[watchPages] re-render failed: ${err.message}\n`)
         } finally {
@@ -662,7 +666,7 @@ class OpengitForge {
     source.on('append', onAppend)
 
     // Initial publish so consumers get a fresh drive on watch start.
-    await this.publishToPagesDrive(repo, { encrypted })
+    await this.publishToPagesDrive(repo, { encrypted, app })
 
     return {
       async stop () {

@@ -1,12 +1,15 @@
 'use strict'
 
 const { render, DEFAULT_OPTIONS } = require('./render')
+const { renderApp } = require('./app')
 const templates = require('./templates')
 
-// Convenience: collect render() into a Map<path, Buffer> for tests / small sites.
-async function renderToMap (args) {
+// Convenience: collect a renderer into a Map<path, Buffer> for tests /
+// small sites. `renderer` defaults to the static-HTML render(); pass
+// renderApp for the SPA + JSON-API ("web app") shape.
+async function renderToMap (args, renderer = render) {
   const out = new Map()
-  for await (const { path, bytes } of render(args)) {
+  for await (const { path, bytes } of renderer(args)) {
     out.set(path, bytes)
   }
   return out
@@ -16,12 +19,13 @@ async function renderToMap (args) {
 //
 // `hyperdriveFactory` is an injection point for tests (so we can pass an
 // in-memory store). Production callers pass a Corestore + Hyperdrive
-// constructor and we instantiate here.
-async function publishToDrive ({ render: renderArgs, hyperdriveFactory }) {
+// constructor and we instantiate here. `renderer` selects the shape:
+// the static HTML site (default) or the SPA + JSON API (renderApp).
+async function publishToDrive ({ render: renderArgs, hyperdriveFactory, renderer = render }) {
   if (!hyperdriveFactory) throw new Error('hyperdriveFactory required')
   const drive = await hyperdriveFactory()
   let written = 0
-  for await (const { path, bytes } of render(renderArgs)) {
+  for await (const { path, bytes } of renderer(renderArgs)) {
     await drive.put(path, bytes)
     written++
   }
@@ -39,6 +43,7 @@ async function publishToDrive ({ render: renderArgs, hyperdriveFactory }) {
 
 module.exports = {
   render,
+  renderApp,
   renderToMap,
   publishToDrive,
   templates,
