@@ -7,9 +7,11 @@ const profile = require('./profile')
 
 // Petnames (SPEC §4.3) — local-first naming.
 //
-// Two namespaces: "users" and "repos". Names within a namespace must be
-// unique. Cross-namespace collisions (a user named "alice" and a repo named
-// "alice") are allowed because resolution is namespace-scoped.
+// Three namespaces: "users", "repos", and "names". Names within a namespace
+// must be unique. Cross-namespace collisions (a user named "alice" and a repo
+// named "alice") are allowed because resolution is namespace-scoped. The
+// "names" namespace is the Layer-1 floor for the opengit-names overlay: a
+// local petname here ALWAYS wins over any followed namespace.
 
 const NAME_RE = /^[a-zA-Z][a-zA-Z0-9._\-/]{0,63}$/
 const KEY_LIKE_HEX_RE = /^[0-9a-fA-F]{64}$/
@@ -25,13 +27,14 @@ class Petnames {
   _load () {
     if (this._data) return this._data
     if (!fs.existsSync(this.file)) {
-      this._data = { version: 1, users: {}, repos: {} }
+      this._data = { version: 1, users: {}, repos: {}, names: {} }
       return this._data
     }
     const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'))
     if (raw.version !== 1) throw new Error(`unsupported petname file version: ${raw.version}`)
     if (!raw.users) raw.users = {}
     if (!raw.repos) raw.repos = {}
+    if (!raw.names) raw.names = {}
     this._data = raw
     return raw
   }
@@ -53,7 +56,7 @@ class Petnames {
   }
 
   add (kind, name, key, { note = '' } = {}) {
-    if (kind !== 'users' && kind !== 'repos') throw new Error(`unknown kind: ${kind}`)
+    if (kind !== 'users' && kind !== 'repos' && kind !== 'names') throw new Error(`unknown kind: ${kind}`)
     Petnames.validateName(name)
     if (typeof key !== 'string' || (!KEY_LIKE_HEX_RE.test(key) && !KEY_LIKE_Z32_RE.test(key))) {
       throw new Error('key must be 64-char hex or 52-char z32')
@@ -93,7 +96,8 @@ class Petnames {
     }
     return {
       users: Object.entries(data.users).map(([name, v]) => ({ name, ...v })),
-      repos: Object.entries(data.repos).map(([name, v]) => ({ name, ...v }))
+      repos: Object.entries(data.repos).map(([name, v]) => ({ name, ...v })),
+      names: Object.entries(data.names || {}).map(([name, v]) => ({ name, ...v }))
     }
   }
 }

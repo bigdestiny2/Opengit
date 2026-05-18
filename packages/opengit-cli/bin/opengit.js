@@ -14,6 +14,8 @@ const {
   profile
 } = require('opengit-core')
 
+const { Namespace, Resolver, FollowedNamespaces } = require('opengit-names')
+
 // Storage layout (SPEC §11.4): $OPENGIT_HOME/profiles/<profile>/storage
 // Profile selection: --profile flag > OPENGIT_PROFILE env > "default"
 // Legacy ~/.opengit/storage is migrated to the default profile on first run.
@@ -42,6 +44,7 @@ const commands = {
   'list-refs': cmdListRefs,
   'profiles': cmdProfiles,
   'petname': cmdPetname,
+  'name': cmdName,
   'keyring': cmdKeyring,
   'identity': cmdIdentity,
   'invite': cmdInvite,
@@ -289,6 +292,196 @@ async function cmdPetname (args) {
     return
   }
   throw new Error('usage: opengit petname [list|add|remove|resolve] ...')
+}
+
+// Naming + discovery overlay (opengit-names). Layered resolution:
+//   Layer 1  local petname (names kind)  — ALWAYS wins, unconditional
+//   Layer 2  directly-followed namespace — signed; by must == pinned owner
+// Conflicts are never auto-picked; the user disambiguates via `name pick`,
+// which promotes the choice to a Layer-1 local petname. v0 is client-side
+// (a followed namespace is read directly over the swarm, best-effort).
+async function cmdName (args) {
+  const sub = args[0]
+  const followed = new FollowedNamespaces({ profileName: PROFILE })
+  const petnames = new Petnames({ profileName: PROFILE })
+
+  if (sub === 'set') {
+    const positional = []
+    let kind = 'repo'
+    for (let i = 1; i < args.length; i++) {
+      if (args[i] === '--kind' && i + 1 < args.length) kind = args[++i]
+      else positional.push(args[i])
+    }
+    const [name, target] = positional
+    if (!name || !target) {
+      throw new Error('usage: opengit name set <name> <target-key> [--kind repo|user|app|namespace]')
+    }
+    const identity = getIdentity()
+    if (!identity) throw new Error("no identity for this profile; run 'opengit identity init' first")
+    await withForge(async (forge) => {
+      const ns = new Namespace(forge.rootStore, { identity })
+      const rec = await ns.setName(name, target, { kind })
+      process.stdout.write(`set ${kind}/${name} -> ${target}\n`)
+      process.stdout.write(`namespace key: ${ns.keyHex}\n`)
+      process.stdout.write(`owner pubkey:  ${ns.ownerHex}\n`)
+      process.stdout.write(`signed:        ${rec.sig.slice(0, 16)}…\n`)
+      process.stdout.write('\nshare so others can follow you:\n')
+      process.stdout.write(`  opengit name follow ${ns.ownerHex} ${ns.keyHex} --label <you>\n`)
+    }, { identity })
+    return
+  }
+
+  if (sub === 'rm' || sub === 'delete') {
+    const name = args[1]
+    if (!name) throw new Error('usage: opengit name rm <name>')
+    const identity = getIdentity()
+    if (!identity) throw new Error("no identity for this profile; run 'opengit identity init' first")
+    await withForge(async (forge) => {
+      const ns = new Namespace(forge.rootStore, { identity })
+      await ns.deleteName(name)
+      process.stdout.write(`tombstoned ${name} (followers will see the removal)\n`)
+    }, { identity })
+    return
+  }
+
+  if (sub === 'ls') {
+    const identity = getIdentity()
+    if (!identity) throw new Error("no identity for this profile; run 'opengit identity init' first")
+    await withForge(async (forge) => {
+      const ns = new Namespace(forge.rootStore, { identity })
+      const list = await ns.list()
+      process.stdout.write(`namespace ${ns.keyHex} (owner ${ns.ownerHex.slice(0, 16)}…)\n`)
+      if (list.length === 0) { process.stdout.write('(empty)\n'); return }
+      for (const e of list) process.stdout.write(`  ${e.kind}/${e.name}\t${e.target}\n`)
+    }, { identity })
+    return
+  }
+
+  if (sub === 'key') {
+    const identity = getIdentity()
+    if (!identity) throw new Error("no identity for this profile; run 'opengit identity init' first")
+    await withForge(async (forge) => {
+      const ns = new Namespace(forge.rootStore, { identity })
+      await ns.ready()
+      process.stdout.write(`owner pubkey:  ${ns.ownerHex}\n`)
+      process.stdout.write(`namespace key: ${ns.keyHex}\n`)
+      process.stdout.write(`namespace z32: ${ns.keyZ32}\n`)
+      process.stdout.write('\nothers follow you with:\n')
+      process.stdout.write(`  opengit name follow ${ns.ownerHex} ${ns.keyHex} --label <you>\n`)
+    }, { identity })
+    return
+  }
+
+  if (sub === 'follow') {
+    const positional = []
+    let label = ''
+    let depth = 1
+    for (let i = 1; i < args.length; i++) {
+      if (args[i] === '--label' && i + 1 < args.length) label = args[++i]
+      else if (args[i] === '--depth' && i + 1 < args.length) depth = parseInt(args[++i], 10)
+      else positional.push(args[i])
+    }
+    const [ownerPubkey, namespaceKey] = positional
+    if (!ownerPubkey || !namespaceKey) {
+      throw new Error('usage: opengit name follow <ownerPubkey> <namespaceKey> [--label "alice"] [--depth 1|2]')
+    }
+    followed.follow(ownerPubkey, namespaceKey, { label, depth })
+    process.stdout.write(`following ${label || ownerPubkey.slice(0, 16) + '…'}\n`)
+    process.stdout.write(`owner:     ${ownerPubkey}\n`)
+    process.stdout.write(`namespace: ${namespaceKey}\n`)
+    process.stdout.write(`depth:     ${depth}${depth === 2 ? '  (depth-2 traversal lands v0.1; stored now)' : ''}\n`)
+    return
+  }
+
+  if (sub === 'unfollow') {
+    const ownerPubkey = args[1]
+    if (!ownerPubkey) throw new Error('usage: opengit name unfollow <ownerPubkey>')
+    const ok = followed.unfollow(ownerPubkey)
+    process.stdout.write(ok ? `unfollowed ${ownerPubkey}\n` : `not following: ${ownerPubkey}\n`)
+    return
+  }
+
+  if (sub === 'follows') {
+    const list = followed.list()
+    if (list.length === 0) { process.stdout.write('(following no namespaces)\n'); return }
+    for (const f of list) {
+      const lbl = f.label ? ` # ${f.label}` : ''
+      process.stdout.write(`${f.ownerPubkey}\t${f.namespaceKey}\td${f.depth}${lbl}\n`)
+    }
+    return
+  }
+
+  if (sub === 'resolve') {
+    const positional = []
+    let kind = null
+    let waitS = 8
+    for (let i = 1; i < args.length; i++) {
+      if (args[i] === '--kind' && i + 1 < args.length) kind = args[++i]
+      else if (args[i] === '--wait' && i + 1 < args.length) waitS = parseInt(args[++i], 10)
+      else positional.push(args[i])
+    }
+    const name = positional[0]
+    if (!name) throw new Error('usage: opengit name resolve <name> [--kind k] [--wait seconds]')
+    await withForge(async (forge) => {
+      // v0 client-side reader: open a followed namespace core by key, join the
+      // swarm to replicate, read its Hyperbee. Best-effort over the network
+      // (same posture as collab/indexer); unreachable == a miss, not an error.
+      const swarm = forge._ensureSwarm()
+      const openNamespace = async (keyStr) => {
+        const key = keyStr.length === 52 ? z32.decode(keyStr) : b4a.from(keyStr, 'hex')
+        const core = forge.rootStore.get({ key })
+        await core.ready()
+        const disc = swarm.join(core.discoveryKey, { server: false, client: true })
+        await disc.flushed().catch(() => {})
+        return Namespace.openReadOnly(forge.rootStore, keyStr)
+      }
+      const resolver = new Resolver({ petnames, followed, openNamespace })
+      const deadline = Date.now() + waitS * 1000
+      let r = await resolver.resolve(name, { kind })
+      while (r.via === 'none' && followed.list().length > 0 && Date.now() < deadline) {
+        await new Promise(s => setTimeout(s, 1000))
+        r = await resolver.resolve(name, { kind })
+      }
+      if (r.via === 'local') {
+        process.stdout.write(`${name} -> ${r.target}\nvia: local petname (Layer 1)\n`)
+      } else if (r.via === 'followed') {
+        process.stdout.write(`${name} -> ${r.target}\nvia: followed namespace ${String(r.owner).slice(0, 16)}…\n`)
+      } else if (r.via === 'conflict') {
+        process.stdout.write(`${name}: CONFLICT — ${r.candidates.length} followed namespaces claim this name:\n`)
+        for (const c of r.candidates) {
+          process.stdout.write(`  ${c.target}  (${c.kind}) via ${c.label || String(c.owner).slice(0, 16) + '…'}\n`)
+        }
+        process.stdout.write('\nnot auto-picked. Pin one as a local petname (Layer 1):\n')
+        process.stdout.write(`  opengit name pick ${name} <target>\n`)
+        process.exit(2)
+      } else {
+        process.stdout.write(`${name}: unresolved (no local petname; no followed namespace served it)\n`)
+        process.exit(1)
+      }
+    })
+    return
+  }
+
+  if (sub === 'pick') {
+    const [, name, target] = args
+    if (!name || !target) {
+      throw new Error('usage: opengit name pick <name> <target>  (pins the disambiguation as a local petname)')
+    }
+    new Resolver({ petnames, followed }).promote(name, target)
+    process.stdout.write(`pinned ${name} -> ${target} as a local petname (now wins at Layer 1)\n`)
+    return
+  }
+
+  throw new Error('usage: opengit name <set|rm|ls|key|follow|unfollow|follows|resolve|pick> ...\n' +
+    '  set <name> <target> [--kind k]   author a signed name->key claim in YOUR namespace\n' +
+    '  rm <name>                        tombstone a name (followers see the removal)\n' +
+    '  ls                               list your namespace\n' +
+    '  key                              print your owner pubkey + namespace key (shareable)\n' +
+    '  follow <ownerPubkey> <nsKey>     follow someone  (--label, --depth 1|2)\n' +
+    '  unfollow <ownerPubkey>           stop following\n' +
+    '  follows                          list who you follow\n' +
+    '  resolve <name> [--kind k]        layered resolve: local petname > followed > none\n' +
+    '  pick <name> <target>             pin a disambiguation choice as a local petname')
 }
 
 async function cmdKeyring (args) {
@@ -1213,6 +1406,12 @@ Subcommands:
   profiles [list|path <name>]  Manage profiles.
   petname [list|add|remove|resolve]
                                Manage local petnames (alice -> pubkey).
+  name <set|rm|ls|key|follow|unfollow|follows|resolve|pick> ...
+                               Naming + discovery overlay. Author a signed
+                               name->key namespace; follow others' namespaces;
+                               resolve with strict precedence (local petname >
+                               followed namespace; conflicts never auto-picked).
+                               v0 client-side; HiveRelay-seedable.
   keyring [list]               Show content keys for private repos.
   identity [show|init|recover|reset]
                                Manage this profile's identity. v0.0.9: init

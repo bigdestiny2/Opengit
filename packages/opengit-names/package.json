@@ -1,0 +1,21 @@
+{
+  "name": "opengit-names",
+  "version": "0.0.1",
+  "description": "Naming + discovery overlay for Opengit: a single-writer signed name->key namespace (Hyperbee) plus a layered resolver (local petname floor > followed namespaces). Client-side v0; HiveRelay-seedable, complementary to the relay catalog.",
+  "license": "Apache-2.0",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./namespace": "./lib/namespace.js",
+    "./resolver": "./lib/resolver.js",
+    "./followed": "./lib/followed.js",
+    "./constants": "./lib/constants.js"
+  },
+  "dependencies": {
+    "opengit-core": "*",
+    "corestore": "^7.9.2",
+    "hyperbee": "^2.27.3",
+    "b4a": "^1.6.6",
+    "z32": "^1.1.0"
+  }
+}
