@@ -77,7 +77,6 @@ Full walkthrough: **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)**.
 | The full protocol spec | [SPEC.md](SPEC.md) |
 | Two-machine test runbook | [TESTING.md](TESTING.md) |
 | The milestone record | [STAGE-4-LIVE-RESULT.md](STAGE-4-LIVE-RESULT.md) |
-| Project history / audits | [docs/history/](docs/history/) |
 
 ## Packages
 
@@ -96,8 +95,7 @@ Full walkthrough: **[docs/USER-GUIDE.md](docs/USER-GUIDE.md)**.
 No foundation, no registry, no telemetry, no phone-home. Anyone can run a
 relay on their own hardware; trust is the operator's explicit pubkey-pinning
 plus content-key choice. Naming is local-first petnames — there is no global
-namespace to capture. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
-[docs/history/DECENTRALIZATION-AUDIT.md](docs/history/DECENTRALIZATION-AUDIT.md).
+namespace to capture. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Requirements
 
