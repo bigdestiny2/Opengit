@@ -49,6 +49,13 @@ class Issues {
 
   async append (entry) {
     await this.ready()
+    // Self-heal: a contributor admitted moments ago may not yet have
+    // pulled the writer.add. One bounded update() lets a replicated
+    // admission take effect so the very first openIssue succeeds
+    // without the caller having to syncCollab() first.
+    if (!this.base.writable) {
+      try { await this.base.update() } catch {}
+    }
     return this.base.append(entry)
   }
 
@@ -172,6 +179,27 @@ class Issues {
     payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
     return this.append(payload)
   }
+
+  // Admit a contributor's Autobase input core as a writer (SPEC §6.3,
+  // v0.0.12 cross-party). `writerKey` is the contributor's autobase
+  // `base.local.key` (hex) — NOT their identity pubkey; the two are
+  // distinct (identity signs payloads, local.key is the input core
+  // Autobase must merge). Signed by an owner/moderator identity; the
+  // apply-handler verifies that and calls host.addWriter so the
+  // contributor's signed issue/comment entries reach every replica.
+  async writerAdd ({ writerKey, identity }) {
+    if (!identity) throw new Error('writerAdd requires an identity')
+    const wk = b4a.isBuffer(writerKey) ? b4a.toString(writerKey, 'hex') : writerKey
+    if (!/^[0-9a-f]{64}$/i.test(wk)) throw new Error('writerAdd: writerKey must be a 32-byte hex autobase key')
+    const payload = {
+      type: 'writer.add',
+      writerKey: wk.toLowerCase(),
+      by: b4a.toString(identity.publicKey, 'hex'),
+      at: Date.now()
+    }
+    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    return this.append(payload)
+  }
 }
 
 // Canonical encoding for signing — sorted keys, omit sig.
@@ -212,6 +240,19 @@ function makeApply (bootstrap) {
 
       const by = v.by.toLowerCase()
       const isModerator = moderators.has(by)
+
+      // Cross-party writer admission (v0.0.12). Only an owner/moderator
+      // identity may admit; `base` here is the Autobase hostcalls object
+      // (apply's 3rd arg) — host.addWriter merges the contributor's input
+      // core so their signed issue entries linearize on every replica.
+      // Without this, a bootstrapped contributor is read-only (Not
+      // writable) and their issues never reach the maintainer.
+      if (v.type === 'writer.add') {
+        if (!isModerator) continue
+        if (!/^[0-9a-f]{64}$/.test(v.writerKey || '')) continue
+        try { await base.addWriter(b4a.from(v.writerKey, 'hex'), { indexer: true }) } catch {}
+        continue
+      }
 
       if (v.type === 'issue.open') {
         const existing = await view.issues.get(v.issueId)

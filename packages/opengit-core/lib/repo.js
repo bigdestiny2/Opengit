@@ -265,6 +265,10 @@ class OpengitRepo {
   async init ({ name, description = '', license = '', defaultBranch = 'main', owners = [] } = {}) {
     await this.ready()
     if (!this.writable) throw new Error('cannot init: repo not writable')
+    // A repo we can init() is, by definition, local-writable. forge.js
+    // also sets this right after init() returns; setting it here too lets
+    // _publishAutobaseKey() run during init (it gates on isLocalWritable).
+    this.isLocalWritable = true
 
     const existing = await this.meta.get('spec')
     if (existing) throw new Error('repo already initialized')
@@ -315,6 +319,16 @@ class OpengitRepo {
     await mbatch.put('spec', { value: SPEC_VERSION, manifestVersion: 1 })
     await mbatch.put('visibility', this.visibility)
     await mbatch.put('cores', coresRecord)
+    // v0.0.12: collaboration authority lives in the PLAINTEXT manifest,
+    // not the encrypted/late-replicating meta. The issues/PR Autobase
+    // apply moderator set is captured ONCE at construction; a contributor
+    // opens the autobase as soon as the manifest replicates (it must, to
+    // get the bootstrap key) — long before meta. Sourcing moderators from
+    // meta gave every contributor an EMPTY set ⇒ their apply silently
+    // dropped every writer.add ⇒ cross-party admission never took effect.
+    // Same lesson as A1: discovery/authority belongs in the manifest.
+    await mbatch.put('owners', ownerKeys)
+    await mbatch.put('moderators', ownerKeys)
     await mbatch.flush()
 
     // Legacy compatibility: keep the v0.0.8 `__cores__`-in-refs entry too.
@@ -332,6 +346,15 @@ class OpengitRepo {
     if (this.isPrivate && this.identity) {
       await this.addInvite(this.identity.publicKey, { label: 'self (owner)' })
     }
+
+    // v0.0.12: found + publish the canonical issues/PR Autobase keys at
+    // creation. Doing it now (not lazily) guarantees every contributor
+    // who later opens the repo bootstraps THESE autobases instead of
+    // minting their own private silo before the owner ever opens one.
+    // Best-effort: a failure here must not abort repo creation (the keys
+    // would simply be published on the owner's first issues/PR open).
+    try { await this._openIssues() } catch {}
+    try { await this._openPRs() } catch {}
 
     return {
       key: this.key,
@@ -652,22 +675,81 @@ class OpengitRepo {
   // lets repos that don't use issues skip the cost of an extra core entirely.
   // ─────────────────────────────────────────────────────────────────────────────
 
+  // v0.0.12 cross-party: the issues/PR Autobase must be the SAME autobase
+  // on every forge. The owner founds it (bootstrap=null ⇒ its key is
+  // stable) and publishes that key in the PLAINTEXT manifest `cores`
+  // record beside refs/objects/… A contributor reads the key and
+  // bootstraps the *identical* Autobase, so a maintainer-admitted
+  // writer's signed entries linearize on all replicas. Pre-v0.0.12 used
+  // bootstrap=null everywhere → every forge was a private silo (no
+  // cross-party issues/PRs at all; found by the Stage-0.3 dry-run).
+  async _autobaseBootKey (field) {
+    try {
+      if (!this.manifest) return null
+      const cr = await this.manifest.get('cores')
+      const hex = cr && cr.value && cr.value[field]
+      if (hex && /^[0-9a-f]{64}$/i.test(hex)) return b4a.from(hex, 'hex')
+    } catch {}
+    return null
+  }
+
+  async _publishAutobaseKey (field, keyBuf) {
+    // Owner-only: the manifest core is writable solely on the creating
+    // forge. Merge the new field into the existing `cores` record so the
+    // refs/objects/meta keys written at init() are preserved.
+    if (!this.isLocalWritable || !this.manifest) return
+    try {
+      const cr = await this.manifest.get('cores')
+      const cores = (cr && cr.value) ? { ...cr.value } : {}
+      const hex = b4a.toString(keyBuf, 'hex')
+      if (cores[field] === hex) return
+      cores[field] = hex
+      await this.manifest.put('cores', cores)
+    } catch {}
+  }
+
+  // Collaboration authority (owners/moderators) for the issues/PR apply
+  // reducer. Sourced from the PLAINTEXT manifest — the only record a
+  // contributor provably has when the autobase is constructed (they wait
+  // for it to get the bootstrap key). Falls back to meta for legacy
+  // (pre-v0.0.12) repos whose manifest predates the owners field.
+  async _manifestAuthority () {
+    let owners = []
+    let moderators = []
+    try {
+      if (this.manifest) {
+        const o = await this.manifest.get('owners')
+        const m = await this.manifest.get('moderators')
+        if (o && Array.isArray(o.value)) owners = o.value
+        if (m && Array.isArray(m.value)) moderators = m.value
+      }
+    } catch {}
+    if (owners.length === 0 && moderators.length === 0) {
+      try {
+        const meta = await this.getMeta()
+        const bs = meta.bootstrap || { owners: meta.owners || [], moderators: meta.moderators || [] }
+        owners = bs.owners || []
+        moderators = bs.moderators || []
+      } catch {}
+    }
+    return {
+      owners,
+      moderators: [...new Set([...(moderators || []), ...(owners || [])])]
+    }
+  }
+
   async _openIssues () {
     if (this.issues) return this.issues
-    const meta = await this.getMeta()
-    const bootstrap = meta.bootstrap || {
-      owners: meta.owners || [],
-      moderators: meta.moderators || []
-    }
-    // Merge moderators with owners (owners are implicit moderators).
-    bootstrap.moderators = [
-      ...(bootstrap.moderators || []),
-      ...(bootstrap.owners || [])
-    ]
+    // Authority from the plaintext manifest (A1 pattern) — NOT meta,
+    // which a contributor hasn't replicated yet when this runs.
+    const bootstrap = await this._manifestAuthority()
 
-    // Own namespace — see the _refsBase note: shared raw store ⇒ shared
-    // `local` core ⇒ second-Autobase deadlock on a replicating remote.
-    this._issuesBase = new Autobase(this.store.namespace('opengit:autobase:issues'), null, {
+    // Own namespace (BUG #7: shared raw store ⇒ shared `local` core ⇒
+    // second-Autobase deadlock on a replicating remote). Bootstrap from
+    // the manifest-published key when present so all forges share ONE
+    // issues Autobase; the founding owner passes null then publishes.
+    const bootKey = await this._autobaseBootKey('issuesAutobase')
+    this._issuesBase = new Autobase(this.store.namespace('opengit:autobase:issues'), bootKey, {
       apply: Issues.makeApply(bootstrap),
       open: Issues.makeOpen(),
       valueEncoding: 'json'
@@ -675,6 +757,7 @@ class OpengitRepo {
     await this._issuesBase.ready()
     this.issues = new Issues.Issues(this._issuesBase)
     await this.issues.ready()
+    if (!bootKey) await this._publishAutobaseKey('issuesAutobase', this._issuesBase.key)
     return this.issues
   }
 
@@ -729,17 +812,12 @@ class OpengitRepo {
 
   async _openPRs () {
     if (this.prs) return this.prs
-    const meta = await this.getMeta()
-    const bootstrap = meta.bootstrap || {
-      owners: meta.owners || [],
-      moderators: meta.moderators || []
-    }
-    bootstrap.moderators = [
-      ...(bootstrap.moderators || []),
-      ...(bootstrap.owners || [])
-    ]
-    // Own namespace — see the _refsBase note.
-    this._prsBase = new Autobase(this.store.namespace('opengit:autobase:prs'), null, {
+    // Authority from the plaintext manifest (A1 pattern) — see _openIssues.
+    const bootstrap = await this._manifestAuthority()
+    // Own namespace (BUG #7) + manifest-published bootstrap key so every
+    // forge shares ONE PR Autobase (see _openIssues / _autobaseBootKey).
+    const bootKey = await this._autobaseBootKey('prsAutobase')
+    this._prsBase = new Autobase(this.store.namespace('opengit:autobase:prs'), bootKey, {
       apply: PRs.makeApply(bootstrap),
       open: PRs.makeOpen(),
       valueEncoding: 'json'
@@ -747,6 +825,7 @@ class OpengitRepo {
     await this._prsBase.ready()
     this.prs = new PRs.PRs(this._prsBase)
     await this.prs.ready()
+    if (!bootKey) await this._publishAutobaseKey('prsAutobase', this._prsBase.key)
     return this.prs
   }
 
@@ -796,6 +875,69 @@ class OpengitRepo {
   async listPREvents (prId) {
     const p = await this._openPRs()
     return p.listEvents(prId)
+  }
+
+  // ── Cross-party collaboration handshake (v0.0.12, SPEC §6.3) ─────────────
+  //
+  // Autobase merges only entries from admitted writer cores. A
+  // contributor's autobase input core (`base.local.key`) is DISTINCT
+  // from their ed25519 identity pubkey: the identity signs payloads, the
+  // local key is what Autobase must merge. Flow:
+  //   1. contributor:  keys = await repo.collabKeys()   // surface input keys
+  //   2. (out-of-band) contributor sends `keys` to the maintainer
+  //   3. maintainer:    await repo.admitCollaborator(keys)
+  // After (3) linearizes, the contributor's signed issue/PR entries
+  // appear on every replica and the maintainer's close/merge flow back.
+
+  // Contributor: the Autobase input-core keys a maintainer must admit.
+  async collabKeys () {
+    await this._openIssues()
+    await this._openPRs()
+    return {
+      issues: b4a.toString(this._issuesBase.local.key, 'hex'),
+      prs: b4a.toString(this._prsBase.local.key, 'hex')
+    }
+  }
+
+  // Maintainer: admit a contributor's issue + PR writer cores. `keys` is
+  // the object returned by the contributor's collabKeys(). Idempotent
+  // (re-admitting the same key is a no-op in the apply handler). The
+  // trailing update() drives the maintainer's own apply so the writer.add
+  // linearizes + is indexer-confirmed promptly (the owner is the indexer)
+  // rather than waiting on the background ack timer.
+  async admitCollaborator (keys) {
+    if (!this.identity) throw new Error('admitCollaborator requires an identity')
+    if (!keys || !keys.issues || !keys.prs) {
+      throw new Error('admitCollaborator requires { issues, prs } writer keys from collabKeys()')
+    }
+    const iss = await this._openIssues()
+    const prs = await this._openPRs()
+    await iss.writerAdd({ writerKey: keys.issues, identity: this.identity })
+    await prs.writerAdd({ writerKey: keys.prs, identity: this.identity })
+    try { await this._issuesBase.update() } catch {}
+    try { await this._prsBase.update() } catch {}
+  }
+
+  // Contributor: block until a maintainer's admitCollaborator() has
+  // replicated and this forge's issue/PR Autobases are writable (so the
+  // next openIssue/openPR will actually linearize on every replica).
+  // Returns { issues, prs } booleans. Bounded; never hangs. Without this
+  // a just-admitted contributor would have to poll openIssue through
+  // "Not writable" themselves.
+  async syncCollab ({ timeoutMs = 20000, intervalMs = 250 } = {}) {
+    await this._openIssues()
+    await this._openPRs()
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      try { await this._issuesBase.update() } catch {}
+      try { await this._prsBase.update() } catch {}
+      if (this._issuesBase.writable && this._prsBase.writable) break
+      await new Promise(r => setTimeout(r, intervalMs))
+    }
+    return {
+      issues: !!(this._issuesBase && this._issuesBase.writable),
+      prs: !!(this._prsBase && this._prsBase.writable)
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

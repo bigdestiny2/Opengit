@@ -52,6 +52,12 @@ class PRs {
 
   async append (entry) {
     await this.ready()
+    // Self-heal: see Issues.append — one bounded update() lets a
+    // just-replicated writer.add take effect so a freshly-admitted
+    // contributor's first openPR succeeds without an explicit sync.
+    if (!this.base.writable) {
+      try { await this.base.update() } catch {}
+    }
     return this.base.append(entry)
   }
 
@@ -199,6 +205,25 @@ class PRs {
     payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
     return this.append(payload)
   }
+
+  // Admit a contributor's Autobase input core as a writer (SPEC §6.3,
+  // v0.0.12 cross-party). `writerKey` = contributor's autobase
+  // `base.local.key` (hex), distinct from their identity pubkey. Signed
+  // by an owner/moderator; apply verifies that and calls host.addWriter
+  // so the contributor's signed pr.* entries linearize everywhere.
+  async writerAdd ({ writerKey, identity }) {
+    if (!identity) throw new Error('writerAdd requires an identity')
+    const wk = b4a.isBuffer(writerKey) ? b4a.toString(writerKey, 'hex') : writerKey
+    if (!/^[0-9a-f]{64}$/i.test(wk)) throw new Error('writerAdd: writerKey must be a 32-byte hex autobase key')
+    const payload = {
+      type: 'writer.add',
+      writerKey: wk.toLowerCase(),
+      by: b4a.toString(identity.publicKey, 'hex'),
+      at: Date.now()
+    }
+    payload.sig = b4a.toString(identity.sign(canonicalize(payload)), 'hex')
+    return this.append(payload)
+  }
 }
 
 // ── Apply / open ────────────────────────────────────────────────────────────
@@ -237,6 +262,17 @@ function makeApply (bootstrap) {
 
       const by = v.by.toLowerCase()
       const isModerator = moderators.has(by)
+
+      // Cross-party writer admission (v0.0.12). Owner/moderator-only;
+      // `base` is the Autobase hostcalls object (apply's 3rd arg).
+      // Without this a bootstrapped contributor is read-only and their
+      // pr.* entries never reach the maintainer's replica.
+      if (v.type === 'writer.add') {
+        if (!isModerator) continue
+        if (!/^[0-9a-f]{64}$/.test(v.writerKey || '')) continue
+        try { await base.addWriter(b4a.from(v.writerKey, 'hex'), { indexer: true }) } catch {}
+        continue
+      }
 
       if (v.type === 'pr.open') {
         const existing = await view.prs.get(v.prId)

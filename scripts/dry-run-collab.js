@@ -65,10 +65,16 @@ async function main () {
     //       Opengit tree through the real helper. We use a fresh single
     //       commit of the actual working tree — real file volume (~100
     //       files), not a toy — without dragging full dev history.
+    // One stable OWNER identity reused by the push forge AND the
+    // persistent server forge — the server IS the maintainer (in the
+    // manifest owners), so it can admit Bob + close/merge. A fresh
+    // per-forge identity (the old code) would make the "maintainer"
+    // unknown to the issues/PR apply ⇒ moderation rejected.
+    const ownerIdentity = new OpengitIdentity()
     const alice = new OpengitForge({
       storage: path.join(aliceHome, 'profiles', 'default', 'storage'),
       profileName: 'default', bootstrap: fix.bootstrap,
-      identity: new OpengitIdentity()
+      identity: ownerIdentity
     })
     await alice.ready()
     const aRepo = await alice.createRepo('opengit')
@@ -108,7 +114,7 @@ async function main () {
     server = new OpengitForge({
       storage: path.join(aliceHome, 'profiles', 'default', 'storage'),
       profileName: 'default', bootstrap: fix.bootstrap,
-      identity: new OpengitIdentity()
+      identity: ownerIdentity
     })
     await server.ready()
     const served = await server.openRepo(repoKey)
@@ -144,45 +150,74 @@ async function main () {
     if (!pkgThere) throw new Error('cloned tree missing packages/opengit-core/lib/repo.js')
     ok('Bob cloned a byte-correct Opengit working tree (SPEC.md + source verified)')
 
-    // ── 4. Forge collaboration primitives.
+    // ── 4. The FULL bidirectional Stage-4 forge loop (v0.0.12).
     //
-    // SCOPE (honest): the git DATA path above is the make-or-break for the
-    // live test and is now conclusively proven with the real Opengit repo.
-    // The signed issue/PR PRIMITIVE is proven separately (unit + the
-    // remote-first probe). What this dry-run does NOT attempt is the
-    // cross-forge issue/PR *replication* dance with two heavyweight forges
-    // + a real-helper subprocess concurrently in ONE process: that hits
-    // in-process Autobase/swarm contention that simply does not exist when
-    // Ian is on a separate machine (true OS-level concurrency). Forcing it
-    // here would test the harness, not the product — same lesson as the
-    // subprocess-over-DHT skip. Cross-party issue/PR is therefore a
-    // Stage-4 LIVE-test verification item (LIVE-TEST-PLAN.md §Stage 4),
-    // not a Stage-0 gate.
-    //
-    // We DO prove the signed issue/PR primitive works on the replicated
-    // remote, bounded by a hard timeout so a hang becomes a loud FAIL.
+    // This is the Definition of Done: "a signed issue and a merged PR
+    // crossing between the two machines." Stage 0.3 originally found this
+    // was impossible (every forge had a private issues/PR Autobase silo);
+    // v0.0.12 publishes the Autobase bootstrap key + collaboration
+    // authority in the plaintext manifest and wires a maintainer→writer
+    // admission handshake. We rehearse the exact live flow here, bounded
+    // by hard timeouts so any hang is a loud FAIL, never an endless run.
     const withTimeout = (p, ms, what) => Promise.race([
       p,
       new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout: ${what} (${ms}ms)`)), ms))
     ])
 
-    const issueId = await withTimeout(
-      bRepo.openIssue({ title: 'dry-run: collab smoke', body: 'Opened by Bob.' }),
-      30_000, 'bRepo.openIssue')
-    const prId = await withTimeout(
-      bRepo.openPR({
-        title: 'dry-run: change from Bob', body: 'fork→PR rehearsal',
-        fromRepo: bRepo.keyHex, fromRef: 'refs/heads/feature', toRef: 'refs/heads/main'
-      }), 30_000, 'bRepo.openPR')
-    ok(`Bob opened signed issue ${issueId} + PR ${prId} on the replicated remote`)
+    // Bob must replicate the manifest's issues/PR Autobase keys before
+    // opening them, else he'd found a private silo (the original bug).
+    await withTimeout(waitFor(async () => {
+      await bRepo.refresh().catch(() => {})
+      const cr = bRepo.manifest ? await bRepo.manifest.get('cores').catch(() => null) : null
+      return (cr && cr.value && cr.value.issuesAutobase && cr.value.prsAutobase) ? true : null
+    }, { timeoutMs: 40_000, label: 'manifest issues/PR autobase keys replicate to Bob' }),
+    45_000, 'manifest autobase keys → Bob')
 
-    const iBack = await withTimeout(bRepo.getIssue(issueId), 15_000, 'getIssue')
-    const pBack = await withTimeout(bRepo.getPR(prId), 15_000, 'getPR')
-    if (!iBack || iBack.title !== 'dry-run: collab smoke') throw new Error('issue not readable back')
-    if (!pBack || pBack.state !== 'open') throw new Error('PR not readable back')
-    ok('signed issue + PR are readable back (Ed25519-authored, Autobase-applied)')
+    // 4a. Maintainer opens an owner issue; Bob (read-only) sees it
+    //     through the shared bootstrapped Autobase.
+    const oIssue = await withTimeout(
+      served.openIssue({ title: 'maintainer: welcome', body: 'Owner-opened.' }),
+      20_000, 'served.openIssue')
+    await withTimeout(waitFor(async () => {
+      const i = await bRepo.getIssue(oIssue).catch(() => null)
+      return i ? true : null
+    }, { timeoutMs: 30_000, label: 'Bob reads maintainer issue' }), 35_000, 'Bob reads owner issue')
+    ok('owner→contributor: Bob reads the maintainer-opened issue (shared Autobase)')
 
-    info('cross-party issue/PR replication → verified live in Stage 4 (separate machines, no in-process contention)')
+    // 4b. Collaboration handshake (the real product API, exactly the
+    //     live flow: Ian surfaces keys → you admit → Ian waits).
+    const keys = await withTimeout(bRepo.collabKeys(), 20_000, 'bRepo.collabKeys')
+    await withTimeout(served.admitCollaborator(keys), 20_000, 'served.admitCollaborator')
+    const synced = await withTimeout(bRepo.syncCollab({ timeoutMs: 30_000 }), 35_000, 'bRepo.syncCollab')
+    if (!synced.issues || !synced.prs) throw new Error(`syncCollab incomplete: ${JSON.stringify(synced)}`)
+    ok('maintainer admitted Bob as a writer; admission replicated (syncCollab)')
+
+    // 4c. Contributor → maintainer: Bob opens a SIGNED issue + PR that
+    //     linearize onto the maintainer's replica.
+    const bIssue = await withTimeout(
+      bRepo.openIssue({ title: 'dry-run: change from Bob', body: 'Contributor issue.' }),
+      20_000, 'bRepo.openIssue')
+    const bPR = await withTimeout(bRepo.openPR({
+      title: 'dry-run: PR from Bob', body: 'fork→PR',
+      fromRepo: bRepo.keyHex, fromRef: 'refs/heads/feature', toRef: 'refs/heads/main'
+    }), 20_000, 'bRepo.openPR')
+    await withTimeout(waitFor(async () => {
+      const i = await served.getIssue(bIssue).catch(() => null)
+      const p = await served.getPR(bPR).catch(() => null)
+      return (i && p && p.state === 'open') ? true : null
+    }, { timeoutMs: 30_000, label: 'maintainer sees Bob issue+PR' }), 35_000, 'maintainer sees Bob issue+PR')
+    ok(`contributor→maintainer: Bob's signed issue ${bIssue} + PR ${bPR} reached the maintainer`)
+
+    // 4d. Maintainer moderates: close Bob's issue, merge Bob's PR.
+    await withTimeout(served.closeIssue({ issueId: bIssue, reason: 'handled' }), 20_000, 'served.closeIssue')
+    await withTimeout(served.mergePR({ prId: bPR, mergeOid: 'f'.repeat(40), strategy: 'merge' }), 20_000, 'served.mergePR')
+    await withTimeout(waitFor(async () => {
+      const i = await bRepo.getIssue(bIssue).catch(() => null)
+      const p = await bRepo.getPR(bPR).catch(() => null)
+      return (i && i.state === 'closed' && p && p.state === 'merged') ? true : null
+    }, { timeoutMs: 30_000, label: 'Bob observes close+merge' }), 35_000, 'Bob observes close+merge')
+    ok('maintainer→contributor: Bob observes his issue CLOSED + PR MERGED (full loop)')
+
     await bob.close()
   } catch (e) {
     failed = e
