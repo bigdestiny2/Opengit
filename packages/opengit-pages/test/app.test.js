@@ -66,8 +66,11 @@ test('renderApp emits a self-contained SPA + well-formed JSON API', async (t) =>
     for (const p of ['/index.html', '/assets/app.css', '/assets/app.js']) {
       assert.ok(map.has(p), `missing ${p}`)
     }
-    // Fully self-contained: no external resource refs anywhere in the SPA
-    const ext = /https?:\/\/(?:fonts|cdn|unpkg|ajax|cdnjs|jsdelivr)\.|<link[^>]+href="https?:|<script[^>]+src="https?:/i
+    // Fully self-contained: no external *resource loads* (stylesheet,
+    // script, img, or known CDN/font hosts) anywhere in the SPA. Metadata
+    // that points at a URL but loads nothing — <link rel="canonical">,
+    // <meta property="og:url"> — is fine offline and is NOT flagged.
+    const ext = /https?:\/\/(?:fonts|cdn|unpkg|ajax|cdnjs|jsdelivr)\.|<link[^>]+rel="(?:stylesheet|preload|prefetch)"[^>]+href="https?:|<script[^>]+src="https?:|<img[^>]+src="https?:/i
     for (const p of ['/index.html', '/assets/app.css', '/assets/app.js']) {
       assert.ok(!ext.test(str(p)), `${p} has an external resource ref (must be offline-safe)`)
     }
