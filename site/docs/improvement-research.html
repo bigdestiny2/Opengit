@@ -4,17 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Improvement Research (history) — Opengit</title>
-<link rel="stylesheet" href="/assets/style.css">
+<meta name="description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="Improvement Research (history) — Opengit">
+<meta property="og:description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%E2%8C%AC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
-<nav class="doc-nav">
+<header class="topbar">
   <div class="wrap nav-row">
-    <a href="/" class="home-link">⌬ Opengit</a>
-    <a href="/docs/quickstart.html">Quickstart</a>
-    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="active">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+    <a href="../index.html" class="brand"><span class="glyph">⌬</span> opengit</a>
+    <nav class="topnav">
+      <a href="../docs/quickstart.html">Quickstart</a>
+      <a href="../docs/user-guide.html">Docs</a>
+      <a href="../docs/architecture.html">Architecture</a>
+      <a href="https://github.com/bigdestiny2/Opengit">GitHub</a>
+    </nav>
   </div>
-</nav>
-<article class="doc-page wrap">
+</header>
+<nav class="doc-nav"><div class="wrap nav-scroll"><a href="../docs/quickstart.html">Quickstart</a><a href="../docs/readme.html">README</a><a href="../docs/user-guide.html">User Guide</a><a href="../docs/cli.html">CLI</a><a href="../docs/architecture.html">Architecture</a><a href="../docs/dev-guide.html">Dev Guide</a><a href="../docs/relay-operators.html">Relays</a><a href="../docs/contributing.html">Contributing</a><a href="../docs/roadmap.html">Roadmap</a><a href="../docs/competitive-landscape.html">Landscape</a><a href="../docs/spec.html">Spec</a><a href="../docs/licensing.html">Licensing</a><a href="../docs/stage-4-live-result.html">Live Result</a><a href="../docs/testing.html">Testing</a><a href="../docs/hiverelay-integration.html">HiveRelay</a><a href="../docs/pearbrowser-integration.html">PearBrowser</a><a href="../docs/feasibility.html">Hist · Feasibility</a><a href="../docs/decentralization-audit.html">Hist · Audit</a><a href="../docs/deep-audit.html">Hist · Deep Audit</a><a href="../docs/improvement-research.html" class="active">Hist · Research</a><a href="../docs/state.html">Hist · State</a><a href="../docs/live-test-plan.html">Hist · Test Plan</a></div></nav>
+<main class="doc-page wrap">
 <h1>Opengit — Improvement Research (post v0.0.8)</h1>
 <blockquote><p>Forward-looking research synthesizing (a) competitive landscape, (b) untapped Holepunch primitives, (c) UX patterns from successful P2P apps, (d) honest gaps from our own audits.</p>
 <p><strong>Snapshot date:</strong> 2026-05-05. <strong>Purpose:</strong> turn the &quot;we shipped v0.0.8, now what?&quot; question into a prioritized list of concrete moves that compound.</p></blockquote>
@@ -162,13 +172,11 @@
 <h2>10. References</h2>
 <p>External research consolidated 2026-05-05. Key sources:</p>
 <ul><li><a href="https://github.com/holepunchto">holepunchto org</a> — verified active primitives</li><li><a href="https://radicle.xyz/">Radicle Heartwood</a> — v1.8.0 (Mar 2026)</li><li><a href="https://codeberg.org/forgejo/discussions/issues/421">Codeberg crawler incident reports</a></li><li><a href="https://sourcehut.org/blog/2026-02-18-whats-cooking-q1-2026/">SourceHut Q1 2026 update + price-raise announcement</a></li><li><a href="https://github.com/bigdestiny2/P2P-Hiverelay#readme">P2P-Hiverelay README at v0.8.1</a></li><li><a href="https://docs.pears.com/">Pear Docs</a></li><li><a href="https://github.com/synonymdev/slashtags">Synonym Slashtags (archived 2023)</a></li><li><a href="https://github.com/holepunchto/keet-identity-key">Keet identity key</a></li><li><a href="https://github.com/holepunchto/autopass">autopass</a></li><li><a href="https://github.com/holepunchto/blind-peer">blind-peer / blind-peering</a></li><li><a href="https://github.com/holepunchto/hyperdb">hyperdb / hyperdispatch / hyperschema</a></li><li><a href="https://github.com/holepunchto/bare">Bare runtime</a></li><li><a href="https://github.com/holepunchto/bare-kit">bare-kit (mobile)</a></li><li>The full DEEP-AUDIT-v0.0.7.md, FEASIBILITY.md, DECENTRALIZATION-AUDIT.md, HIVERELAY-INTEGRATION.md, PEARBROWSER-INTEGRATION.md, and SPEC.md</li></ul>
-</article>
+</main>
 <footer>
   <div class="wrap">
-    <p>
-      Apache-2.0 by default · No telemetry · No phone-home ·
-      <a href="https://github.com/bigdestiny2/opengit">source</a>
-    </p>
+    <p><span class="glyph">⌬</span> <strong>opengit</strong> — a peer-to-peer code forge.</p>
+    <p class="muted">Apache-2.0 (AGPL only via the explicit <code>--use-hiverelay</code> opt-in) · No telemetry · No phone-home · No foundation · <a href="https://github.com/bigdestiny2/Opengit">source</a></p>
   </div>
 </footer>
 </body>

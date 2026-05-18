@@ -4,20 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Decentralization Audit (history) — Opengit</title>
-<link rel="stylesheet" href="/assets/style.css">
+<meta name="description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="Decentralization Audit (history) — Opengit">
+<meta property="og:description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%E2%8C%AC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
-<nav class="doc-nav">
+<header class="topbar">
   <div class="wrap nav-row">
-    <a href="/" class="home-link">⌬ Opengit</a>
-    <a href="/docs/quickstart.html">Quickstart</a>
-    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="active">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+    <a href="../index.html" class="brand"><span class="glyph">⌬</span> opengit</a>
+    <nav class="topnav">
+      <a href="../docs/quickstart.html">Quickstart</a>
+      <a href="../docs/user-guide.html">Docs</a>
+      <a href="../docs/architecture.html">Architecture</a>
+      <a href="https://github.com/bigdestiny2/Opengit">GitHub</a>
+    </nav>
   </div>
-</nav>
-<article class="doc-page wrap">
+</header>
+<nav class="doc-nav"><div class="wrap nav-scroll"><a href="../docs/quickstart.html">Quickstart</a><a href="../docs/readme.html">README</a><a href="../docs/user-guide.html">User Guide</a><a href="../docs/cli.html">CLI</a><a href="../docs/architecture.html">Architecture</a><a href="../docs/dev-guide.html">Dev Guide</a><a href="../docs/relay-operators.html">Relays</a><a href="../docs/contributing.html">Contributing</a><a href="../docs/roadmap.html">Roadmap</a><a href="../docs/competitive-landscape.html">Landscape</a><a href="../docs/spec.html">Spec</a><a href="../docs/licensing.html">Licensing</a><a href="../docs/stage-4-live-result.html">Live Result</a><a href="../docs/testing.html">Testing</a><a href="../docs/hiverelay-integration.html">HiveRelay</a><a href="../docs/pearbrowser-integration.html">PearBrowser</a><a href="../docs/feasibility.html">Hist · Feasibility</a><a href="../docs/decentralization-audit.html" class="active">Hist · Audit</a><a href="../docs/deep-audit.html">Hist · Deep Audit</a><a href="../docs/improvement-research.html">Hist · Research</a><a href="../docs/state.html">Hist · State</a><a href="../docs/live-test-plan.html">Hist · Test Plan</a></div></nav>
+<main class="doc-page wrap">
 <h1>Opengit — Decentralization Audit</h1>
 <blockquote><p>Pass 1 against the v0.0.1 skeleton. Identifies every place where the current code, the spec, or the operating model has a centralization point — even subtle ones — and proposes the fix or a justified exception.</p></blockquote>
-<p><strong>Date:</strong> 2026-05-02 <strong>Scope:</strong> the codebase as committed (skeleton), <a href="/docs/spec.html">SPEC.md</a>, <a href="FEASIBILITY.md">FEASIBILITY.md</a>, and the implicit operational model.</p>
+<p><strong>Date:</strong> 2026-05-02 <strong>Scope:</strong> the codebase as committed (skeleton), <a href="spec.html">SPEC.md</a>, <a href="feasibility.html">FEASIBILITY.md</a>, and the implicit operational model.</p>
 <hr>
 <h2>Decentralization principles (the bar we're auditing against)</h2>
 <p>We commit to these. Any deviation requires explicit, documented justification.</p>
@@ -40,11 +50,11 @@
 <ul><li><strong>Blind mirroring</strong> — encrypted-block replication where the relay holds ciphertext; decryption keys stay client-side. The relay never sees plaintext.</li><li><strong>Always-on discovery</strong> — relay nodes maintain DHT presence so peers can find data without an origin online.</li><li><strong>A general-purpose API</strong> — relay-as-a-service for any Hypercore-based application, not just Keet.</li></ul>
 <h3>Why we shipped a non-HiveRelay relay first</h3>
 <p>Honest reasons:</p>
-<ol><li>HiveRelay's SDK shape needed Phase 0 verification before commit (this was the de-risk item in <a href="FEASIBILITY.md#20-recommended-path-forward">FEASIBILITY.md §20</a>). <strong>Verified 2026-05-03 — see <a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</strong> HiveRelay v0.5+ ships a stable blind-mirroring SDK (<code>p2p-hiverelay-client</code>), Apache-2.0, with the exact <code>publish(dir, { encryptionKey })</code> API we need; v0.6.0 adds capability-doc signing, diverse-quorum reads, and signed fork proofs that align with audit principles #6 and #9.</li><li>The simplest possible mirror (just join the swarm and replicate) is enough for the v0.0.1 demo and removes a dependency surface for the first integration test.</li><li>The &quot;mirror plaintext&quot; design happens to work for <strong>public repos</strong>, which is what the demo targets.</li></ol>
+<ol><li>HiveRelay's SDK shape needed Phase 0 verification before commit (this was the de-risk item in <a href="feasibility.html#20-recommended-path-forward">FEASIBILITY.md §20</a>). <strong>Verified 2026-05-03 — see <a href="hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</strong> HiveRelay v0.5+ ships a stable blind-mirroring SDK (<code>p2p-hiverelay-client</code>), Apache-2.0, with the exact <code>publish(dir, { encryptionKey })</code> API we need; v0.6.0 adds capability-doc signing, diverse-quorum reads, and signed fork proofs that align with audit principles #6 and #9.</li><li>The simplest possible mirror (just join the swarm and replicate) is enough for the v0.0.1 demo and removes a dependency surface for the first integration test.</li><li>The &quot;mirror plaintext&quot; design happens to work for <strong>public repos</strong>, which is what the demo targets.</li></ol>
 <h3>The correctness gap (audit finding)</h3>
-<p><a href="SPEC.md#10-hiverelay-integration">SPEC §10</a> and the FEASIBILITY rating GREEN both <strong>assume</strong> we'll plug in HiveRelay. The codebase comment in <code>relay.js</code> says &quot;minimal viable HiveRelay-like&quot; — which is a polite phrasing for &quot;doesn't do the blind part.&quot; This is the most important correction this audit produces:</p>
+<p><a href="spec.html#10-hiverelay-integration">SPEC §10</a> and the FEASIBILITY rating GREEN both <strong>assume</strong> we'll plug in HiveRelay. The codebase comment in <code>relay.js</code> says &quot;minimal viable HiveRelay-like&quot; — which is a polite phrasing for &quot;doesn't do the blind part.&quot; This is the most important correction this audit produces:</p>
 <blockquote><p><strong>Action:</strong> Rename <code>opengit-relay</code>'s current implementation to <code>opengit-mirror</code> (a <em>plaintext public-repo mirror</em>, honestly labeled). Reserve the name <code>opengit-relay</code> for the blind-mirror integration that uses HiveRelay or an equivalent encrypted-replication primitive. Update SPEC and code comments accordingly. <strong>A user reading the docs must not believe their private repo is blind-mirrored when in fact it is plaintext-mirrored.</strong></p></blockquote>
-<blockquote><p>~~<strong>Action:</strong> Add a Phase 0 task: confirm HiveRelay's current availability/SDK/license.~~ <strong>CLOSED 2026-05-03.</strong> HiveRelay verified ready: Apache-2.0, <code>p2p-hiverelay-client</code> v0.5.1 published, blind-encryption SDK matches what we need, capability-doc signing + quorum + fork proofs align with audit principles #6/#9. Integration scoped in <a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>; v0.0.4 will ship <code>packages/opengit-relay/</code> as the thin wrapper.</p></blockquote>
+<blockquote><p>~~<strong>Action:</strong> Add a Phase 0 task: confirm HiveRelay's current availability/SDK/license.~~ <strong>CLOSED 2026-05-03.</strong> HiveRelay verified ready: Apache-2.0, <code>p2p-hiverelay-client</code> v0.5.1 published, blind-encryption SDK matches what we need, capability-doc signing + quorum + fork proofs align with audit principles #6/#9. Integration scoped in <a href="hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>; v0.0.4 will ship <code>packages/opengit-relay/</code> as the thin wrapper.</p></blockquote>
 <p>The spec sketch for the renamed split:</p>
 <table><thead><tr><th>Component</th><th>Sees plaintext?</th><th>Use for</th><th>Status in v0.0.1</th></tr></thead><tbody><tr><td><code>opengit-mirror</code></td><td>yes</td><td>Public repos only</td><td>Implemented (currently misnamed <code>opengit-relay</code>)</td></tr><tr><td><code>opengit-relay</code> (blind)</td><td>no</td><td>Private repos, censorship-resistance</td><td><strong>Not implemented</strong>; depends on HiveRelay or hand-rolled blind replication</td></tr></tbody></table>
 <h3>What &quot;blind&quot; requires from us</h3>
@@ -72,7 +82,7 @@ wss://relay-sg.p2phiverelay.xyz/dht-relay   (APAC region)</code></pre>
 <ul><li>[ ] Recruit at least 2 independent operators to host additional WSS DHT-relay endpoints before promoting this list to &quot;the network&quot; anywhere user-facing.</li><li>[ ] Document <code>$OPENGIT_RELAYS</code> override in the CLI's help output and in README.</li><li>[ ] Ship <code>opengit-bootstrap</code> (HyperDHT bootstrap node) as a separate package so users can run their own.</li></ul>
 <hr>
 <h2>3. The &quot;default relay&quot; trap</h2>
-<p><a href="SPEC.md#102-integration-points">SPEC §10.2</a> says:</p>
+<p><a href="spec.html#102-integration-points">SPEC §10.2</a> says:</p>
 <blockquote><p>On repo creation, the Pear app prompts: &quot;Pin to default community relay? Configure your own?&quot;</p></blockquote>
 <p>A &quot;default&quot; relay, even with the prompt, will be selected by the supermajority of users. Bittorrent's history (default tracker behavior in early clients) and ActivityPub's history (mastodon.social) both teach the same lesson: <strong>the default becomes the network</strong>, and the network becomes a single point of censorship/legal pressure/operator capture.</p>
 <h3>Mitigations</h3>
@@ -86,7 +96,7 @@ wss://relay-sg.p2phiverelay.xyz/dht-relay   (APAC region)</code></pre>
 <blockquote><p><strong>Action:</strong> Drop &quot;we run the reference indexer&quot; from FEASIBILITY recommendations. Replace with &quot;we coordinate launch with N≥3 independent indexer operators.&quot;</p></blockquote>
 <hr>
 <h2>5. CI runner trust = repo-owner gatekeeping</h2>
-<p><a href="SPEC.md#83-runner-trust">SPEC §8.3</a>: runner pubkey allowlist in <code>ns:meta.runners</code>. This is <strong>secure</strong> but <strong>fragmented</strong> — every repo's owner has to hand-pick runners. A new contributor running their own runner can't get their result counted.</p>
+<p><a href="spec.html#83-runner-trust">SPEC §8.3</a>: runner pubkey allowlist in <code>ns:meta.runners</code>. This is <strong>secure</strong> but <strong>fragmented</strong> — every repo's owner has to hand-pick runners. A new contributor running their own runner can't get their result counted.</p>
 <h3>Tension</h3>
 <p>The fundamental tension is: untrusted runners can lie (post fake green CI). We resolve in v1 by allowlists. That gives:</p>
 <ul><li>✓ Crypto-secure (no false positives accepted).</li><li>✗ High friction for community runners (not a network effect).</li></ul>
@@ -129,7 +139,7 @@ privateTopic = H(&quot;opengit:repo:private:&quot; + sharedSecret)</code></pre>
 <blockquote><p><strong>Action:</strong> Specify two topic-derivation rules in SPEC §5.3 — public vs. private. Implement in v0.0.2 alongside the encrypted-repo work.</p></blockquote>
 <hr>
 <h2>11. Z32 vs. hex canonicalization</h2>
-<p>The codebase mixes <code>keyHex</code> (hex) and <code>keyZ32</code> (z32). <a href="SPEC.md#16-glossary">SPEC.md §16</a> doesn't pick one. Different clients picking differently → URL fragmentation, copy-paste failures, search-tool incompatibility.</p>
+<p>The codebase mixes <code>keyHex</code> (hex) and <code>keyZ32</code> (z32). <a href="spec.html#16-glossary">SPEC.md §16</a> doesn't pick one. Different clients picking differently → URL fragmentation, copy-paste failures, search-tool incompatibility.</p>
 <blockquote><p><strong>Action:</strong> Specify in SPEC: <strong>z32 is canonical</strong> for user-visible URLs (<code>opengit://&lt;z32&gt;</code>). Hex is internal-only, used in JSON metadata. Both must round-trip via <code>OpengitForge._resolveKey</code>. Add a test asserting both encodings address the same repo.</p></blockquote>
 <hr>
 <h2>12. Naming layer absent</h2>
@@ -206,13 +216,11 @@ z32@^1.1.0           →  Apache-2.0  (verify)</code></pre>
 <p>The skeleton's bones are sound. No core architectural change is needed; what we have is correct in shape. The risks are at the <strong>operational seams</strong> — defaults, bootstraps, naming, identity recovery, the relay-vs-mirror distinction — and they're addressable individually.</p>
 <p>The single most important correction is <strong>the HiveRelay misnomer</strong>: shipping a plaintext mirror under a name that implies blind mirroring is the kind of thing that, uncorrected, becomes the rationalization a year later when someone notices private repos are readable by relay operators. Fix the naming now, ship the blind path next, and the v0.0.1 demo remains valid (it's a public repo) while the protocol stays honest.</p>
 <p>Recommend pausing further feature work until <strong>immediate action items</strong> are addressed — this is the right cost-of-correctness moment.</p>
-</article>
+</main>
 <footer>
   <div class="wrap">
-    <p>
-      Apache-2.0 by default · No telemetry · No phone-home ·
-      <a href="https://github.com/bigdestiny2/opengit">source</a>
-    </p>
+    <p><span class="glyph">⌬</span> <strong>opengit</strong> — a peer-to-peer code forge.</p>
+    <p class="muted">Apache-2.0 (AGPL only via the explicit <code>--use-hiverelay</code> opt-in) · No telemetry · No phone-home · No foundation · <a href="https://github.com/bigdestiny2/Opengit">source</a></p>
   </div>
 </footer>
 </body>

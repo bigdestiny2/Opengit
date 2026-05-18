@@ -4,24 +4,34 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Relay Operators — Opengit</title>
-<link rel="stylesheet" href="/assets/style.css">
+<meta name="description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="Relay Operators — Opengit">
+<meta property="og:description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%E2%8C%AC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
-<nav class="doc-nav">
+<header class="topbar">
   <div class="wrap nav-row">
-    <a href="/" class="home-link">⌬ Opengit</a>
-    <a href="/docs/quickstart.html">Quickstart</a>
-    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="active">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+    <a href="../index.html" class="brand"><span class="glyph">⌬</span> opengit</a>
+    <nav class="topnav">
+      <a href="../docs/quickstart.html">Quickstart</a>
+      <a href="../docs/user-guide.html">Docs</a>
+      <a href="../docs/architecture.html">Architecture</a>
+      <a href="https://github.com/bigdestiny2/Opengit">GitHub</a>
+    </nav>
   </div>
-</nav>
-<article class="doc-page wrap">
+</header>
+<nav class="doc-nav"><div class="wrap nav-scroll"><a href="../docs/quickstart.html">Quickstart</a><a href="../docs/readme.html">README</a><a href="../docs/user-guide.html">User Guide</a><a href="../docs/cli.html">CLI</a><a href="../docs/architecture.html">Architecture</a><a href="../docs/dev-guide.html">Dev Guide</a><a href="../docs/relay-operators.html" class="active">Relays</a><a href="../docs/contributing.html">Contributing</a><a href="../docs/roadmap.html">Roadmap</a><a href="../docs/competitive-landscape.html">Landscape</a><a href="../docs/spec.html">Spec</a><a href="../docs/licensing.html">Licensing</a><a href="../docs/stage-4-live-result.html">Live Result</a><a href="../docs/testing.html">Testing</a><a href="../docs/hiverelay-integration.html">HiveRelay</a><a href="../docs/pearbrowser-integration.html">PearBrowser</a><a href="../docs/feasibility.html">Hist · Feasibility</a><a href="../docs/decentralization-audit.html">Hist · Audit</a><a href="../docs/deep-audit.html">Hist · Deep Audit</a><a href="../docs/improvement-research.html">Hist · Research</a><a href="../docs/state.html">Hist · State</a><a href="../docs/live-test-plan.html">Hist · Test Plan</a></div></nav>
+<main class="doc-page wrap">
 <h1>Relay &amp; Mirror Operator Guide</h1>
 <p>P2P has no implicit always-on server. A repo is reachable only while the owner is online, a peer has it open, or <strong>someone pins it</strong>. This guide is for the people who run that pinning infrastructure — and for repo owners who want owner-offline availability.</p>
 <p>There is <strong>no Opengit foundation</strong>. Anyone runs a relay on their own hardware. Trust is always the operator's explicit pubkey-pinning + content-key choice.</p>
 <hr>
 <h2>Pick the right tool</h2>
 <table><thead><tr><th>You want to keep alive…</th><th>Use</th><th>Sees plaintext?</th><th>Deps / license</th></tr></thead><tbody><tr><td>a <strong>public</strong> repo</td><td><code>opengit-mirror</code></td><td>yes (it's public)</td><td>native Hyperswarm, zero extra deps (Apache-2.0)</td></tr><tr><td>a <strong>public</strong> repo, Holepunch's official pinning</td><td><code>opengit-mirror --blind-peer</code></td><td>yes</td><td><code>blind-peer</code> (optional dep)</td></tr><tr><td>a <strong>private</strong> repo (encrypted)</td><td><code>opengit-relay</code></td><td><strong>no</strong> (ciphertext only)</td><td>native (Apache-2.0)</td></tr><tr><td>a private repo via the HiveRelay operator network</td><td><code>opengit-relay --use-hiverelay</code></td><td>no</td><td>pulls <strong>AGPL-3.0</strong> <code>p2p-hiverelay-client</code></td></tr><tr><td>owner-offline for <em>your own</em> repo</td><td><code>opengit serve &lt;repo&gt; --mirror &lt;pubkey&gt;</code></td><td>n/a</td><td>client of a blind-peer you trust</td></tr></tbody></table>
-<p><strong>License boundary (important):</strong> everything is <strong>Apache-2.0</strong> on the native path. <code>--use-hiverelay</code> is the <em>only</em> switch that pulls AGPL-3.0 code. Without it, nothing AGPL is loaded. See <a href="../LICENSING.md">../LICENSING.md</a>.</p>
+<p><strong>License boundary (important):</strong> everything is <strong>Apache-2.0</strong> on the native path. <code>--use-hiverelay</code> is the <em>only</em> switch that pulls AGPL-3.0 code. Without it, nothing AGPL is loaded. See <a href="licensing.html">../LICENSING.md</a>.</p>
 <h2>Public-repo mirror</h2>
 <pre data-lang="bash"><code># native (default): hand-rolled Hyperswarm Corestore replication, no extra deps
 node packages/opengit-mirror/bin/opengit-mirror.js --repo &lt;key&gt;
@@ -55,7 +65,7 @@ node packages/opengit-relay/bin/opengit-relay.js --repo &lt;key&gt; --use-hivere
 <pre data-lang="bash"><code>OPENGIT_PROFILE=fresh git clone opengit://&lt;key&gt; offline-clone
 #  (if the relay isn't on the public DHT path, both sides:
 #   export OPENGIT_BOOTSTRAP=&quot;&lt;relay-host:port&gt;&quot;)</code></pre>
-<p>✅ Success = the clone works with the owner offline, byte-correct. Reproduce <strong>twice</strong> before relying on it. Full procedure + private-repo cold-bootstrap variant: <a href="../TESTING.md">../TESTING.md</a> §Stage 5.2.</p>
+<p>✅ Success = the clone works with the owner offline, byte-correct. Reproduce <strong>twice</strong> before relying on it. Full procedure + private-repo cold-bootstrap variant: <a href="testing.html">../TESTING.md</a> §Stage 5.2.</p>
 <h2>Trust model (pin relay identities)</h2>
 <p>You decide which operator pubkeys you trust — out-of-band, explicitly:</p>
 <pre data-lang="bash"><code>opengit pin-relay https://relay.example pubkeyhex --note &quot;my relay&quot;
@@ -66,14 +76,12 @@ opengit unpin-relay https://relay.example</code></pre>
 <p><code>opengit-indexer</code> subscribes to a list of <strong>public</strong> repos, ingests their meta + issues, and exposes a Hyperbee-backed search RPC over Hyperswarm. Clients query N indexers in parallel. It is strictly opt-in and only ever touches public content. See <a href="../packages/opengit-indexer"><code>packages/opengit-indexer</code></a>.</p>
 <h2>Operator principles</h2>
 <ul><li><strong>No telemetry, no phone-home.</strong> Don't add any.</li><li><strong>Plaintext only where it's already public.</strong> Private repos: ciphertext only, ever.</li><li><strong>Explicit trust.</strong> Pubkey-pin; document which keys you serve.</li><li><strong>Self-hosting is the obvious-correct default.</strong> The foundation relays are a convenience, not an authority — <code>known-relays.js</code> documents this and pushes self-hosting.</li></ul>
-<p>Background: <a href="../HIVERELAY-INTEGRATION.md">../HIVERELAY-INTEGRATION.md</a> (verified upstream snapshot + integration design), <a href="history/DECENTRALIZATION-AUDIT.md">history/DECENTRALIZATION-AUDIT.md</a>.</p>
-</article>
+<p>Background: <a href="hiverelay-integration.html">../HIVERELAY-INTEGRATION.md</a> (verified upstream snapshot + integration design), <a href="decentralization-audit.html">history/DECENTRALIZATION-AUDIT.md</a>.</p>
+</main>
 <footer>
   <div class="wrap">
-    <p>
-      Apache-2.0 by default · No telemetry · No phone-home ·
-      <a href="https://github.com/bigdestiny2/opengit">source</a>
-    </p>
+    <p><span class="glyph">⌬</span> <strong>opengit</strong> — a peer-to-peer code forge.</p>
+    <p class="muted">Apache-2.0 (AGPL only via the explicit <code>--use-hiverelay</code> opt-in) · No telemetry · No phone-home · No foundation · <a href="https://github.com/bigdestiny2/Opengit">source</a></p>
   </div>
 </footer>
 </body>

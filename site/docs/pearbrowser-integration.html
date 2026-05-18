@@ -4,17 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PearBrowser Integration — Opengit</title>
-<link rel="stylesheet" href="/assets/style.css">
+<meta name="description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="PearBrowser Integration — Opengit">
+<meta property="og:description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%E2%8C%AC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
-<nav class="doc-nav">
+<header class="topbar">
   <div class="wrap nav-row">
-    <a href="/" class="home-link">⌬ Opengit</a>
-    <a href="/docs/quickstart.html">Quickstart</a>
-    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="active">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+    <a href="../index.html" class="brand"><span class="glyph">⌬</span> opengit</a>
+    <nav class="topnav">
+      <a href="../docs/quickstart.html">Quickstart</a>
+      <a href="../docs/user-guide.html">Docs</a>
+      <a href="../docs/architecture.html">Architecture</a>
+      <a href="https://github.com/bigdestiny2/Opengit">GitHub</a>
+    </nav>
   </div>
-</nav>
-<article class="doc-page wrap">
+</header>
+<nav class="doc-nav"><div class="wrap nav-scroll"><a href="../docs/quickstart.html">Quickstart</a><a href="../docs/readme.html">README</a><a href="../docs/user-guide.html">User Guide</a><a href="../docs/cli.html">CLI</a><a href="../docs/architecture.html">Architecture</a><a href="../docs/dev-guide.html">Dev Guide</a><a href="../docs/relay-operators.html">Relays</a><a href="../docs/contributing.html">Contributing</a><a href="../docs/roadmap.html">Roadmap</a><a href="../docs/competitive-landscape.html">Landscape</a><a href="../docs/spec.html">Spec</a><a href="../docs/licensing.html">Licensing</a><a href="../docs/stage-4-live-result.html">Live Result</a><a href="../docs/testing.html">Testing</a><a href="../docs/hiverelay-integration.html">HiveRelay</a><a href="../docs/pearbrowser-integration.html" class="active">PearBrowser</a><a href="../docs/feasibility.html">Hist · Feasibility</a><a href="../docs/decentralization-audit.html">Hist · Audit</a><a href="../docs/deep-audit.html">Hist · Deep Audit</a><a href="../docs/improvement-research.html">Hist · Research</a><a href="../docs/state.html">Hist · State</a><a href="../docs/live-test-plan.html">Hist · Test Plan</a></div></nav>
+<main class="doc-page wrap">
 <h1>PearBrowser Integration Plan</h1>
 <blockquote><p>Snapshot of <a href="https://github.com/bigdestiny2/PearBrowser">bigdestiny2/PearBrowser</a> and how Opengit repos surface as browseable content inside it.</p>
 <p><strong>Snapshot date:</strong> 2026-05-03 (latest commit <code>4d74c7c</code>, &quot;HTTPS parity: expectedOrigin + opt-in window.pear injection&quot;, default branch <code>main</code>).</p></blockquote>
@@ -154,13 +164,11 @@ status: visible to PearBrowser via any seeding mirror/relay</code></pre>
 <hr>
 <h2>7. Action items</h2>
 <ul><li>[ ] Build <code>packages/opengit-pages/</code> per §4.1</li><li>[ ] Wire <code>OpengitForge.publishToPagesDrive</code> per §4.2</li><li>[ ] Add <code>opengit pages publish</code> / <code>opengit pages url</code> / <code>opengit pages watch</code> CLI</li><li>[ ] Tests: render a fixture repo, assert a stable snapshot of the output map</li><li>[ ] SPEC §12.x: document the pages-drive shape and the <code>&lt;link rel=&quot;alternate&quot;&gt;</code> reciprocity</li><li>[ ] Cross-link this doc from README, HIVERELAY-INTEGRATION.md, and SPEC §10</li><li>[ ] (Out of v0.0.6) Pull request to PearBrowser for an <code>opengit://</code> protocol handler (Shape C) when the project is mature enough to maintain that interface</li></ul>
-</article>
+</main>
 <footer>
   <div class="wrap">
-    <p>
-      Apache-2.0 by default · No telemetry · No phone-home ·
-      <a href="https://github.com/bigdestiny2/opengit">source</a>
-    </p>
+    <p><span class="glyph">⌬</span> <strong>opengit</strong> — a peer-to-peer code forge.</p>
+    <p class="muted">Apache-2.0 (AGPL only via the explicit <code>--use-hiverelay</code> opt-in) · No telemetry · No phone-home · No foundation · <a href="https://github.com/bigdestiny2/Opengit">source</a></p>
   </div>
 </footer>
 </body>

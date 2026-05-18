@@ -4,17 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Live Result (milestone) — Opengit</title>
-<link rel="stylesheet" href="/assets/style.css">
+<meta name="description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="Live Result (milestone) — Opengit">
+<meta property="og:description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%E2%8C%AC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
-<nav class="doc-nav">
+<header class="topbar">
   <div class="wrap nav-row">
-    <a href="/" class="home-link">⌬ Opengit</a>
-    <a href="/docs/quickstart.html">Quickstart</a>
-    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="active">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+    <a href="../index.html" class="brand"><span class="glyph">⌬</span> opengit</a>
+    <nav class="topnav">
+      <a href="../docs/quickstart.html">Quickstart</a>
+      <a href="../docs/user-guide.html">Docs</a>
+      <a href="../docs/architecture.html">Architecture</a>
+      <a href="https://github.com/bigdestiny2/Opengit">GitHub</a>
+    </nav>
   </div>
-</nav>
-<article class="doc-page wrap">
+</header>
+<nav class="doc-nav"><div class="wrap nav-scroll"><a href="../docs/quickstart.html">Quickstart</a><a href="../docs/readme.html">README</a><a href="../docs/user-guide.html">User Guide</a><a href="../docs/cli.html">CLI</a><a href="../docs/architecture.html">Architecture</a><a href="../docs/dev-guide.html">Dev Guide</a><a href="../docs/relay-operators.html">Relays</a><a href="../docs/contributing.html">Contributing</a><a href="../docs/roadmap.html">Roadmap</a><a href="../docs/competitive-landscape.html">Landscape</a><a href="../docs/spec.html">Spec</a><a href="../docs/licensing.html">Licensing</a><a href="../docs/stage-4-live-result.html" class="active">Live Result</a><a href="../docs/testing.html">Testing</a><a href="../docs/hiverelay-integration.html">HiveRelay</a><a href="../docs/pearbrowser-integration.html">PearBrowser</a><a href="../docs/feasibility.html">Hist · Feasibility</a><a href="../docs/decentralization-audit.html">Hist · Audit</a><a href="../docs/deep-audit.html">Hist · Deep Audit</a><a href="../docs/improvement-research.html">Hist · Research</a><a href="../docs/state.html">Hist · State</a><a href="../docs/live-test-plan.html">Hist · Test Plan</a></div></nav>
+<main class="doc-page wrap">
 <h1>Stage 4 — LIVE RESULT: Opengit's first real two-machine collaboration</h1>
 <p><strong>Date:</strong> 2026-05-18 <strong>Outcome:</strong> ✅ <strong>PASSED.</strong> A signed issue and a signed PR, opened by a second person on a second physical machine, replicated over the real Hyperswarm DHT to the repo owner, who closed and merged them. The milestone Opengit had never reached — reached.</p>
 <p>This is the Definition of Done from <code>docs/history/LIVE-TEST-PLAN.md</code>:</p>
@@ -54,13 +64,11 @@
 <p>Stage 0 solo pre-flight caught and fixed <strong>8 real bugs</strong> before Ian was involved (6 in the git-data path, the Autobase <code>local</code>-core collision, and the cross-party silo / empty-moderator-set bug) — see <code>docs/history/LIVE-TEST-PLAN.md</code> §Status. The in-harness <code>scripts/dry-run-collab.js</code> was green <strong>9/9</strong> with the real repo as payload, and the loop was E2E-proven across two OS processes (script and CLI) before this session. Discipline paid: the live run reproduced the rehearsal exactly.</p>
 <h2>Reproduce</h2>
 <ul><li>In-harness, one machine: <code>node scripts/dry-run-collab.js</code> → <code>DRY-RUN PASSED — 9/9</code>.</li><li>Two machines: follow <code>TESTING.md</code> (<code>opengit collab maintainer</code> / <code>opengit collab contributor</code>, blob via <code>live-admit.txt</code> or <code>opengit collab admit</code>).</li></ul>
-</article>
+</main>
 <footer>
   <div class="wrap">
-    <p>
-      Apache-2.0 by default · No telemetry · No phone-home ·
-      <a href="https://github.com/bigdestiny2/opengit">source</a>
-    </p>
+    <p><span class="glyph">⌬</span> <strong>opengit</strong> — a peer-to-peer code forge.</p>
+    <p class="muted">Apache-2.0 (AGPL only via the explicit <code>--use-hiverelay</code> opt-in) · No telemetry · No phone-home · No foundation · <a href="https://github.com/bigdestiny2/Opengit">source</a></p>
   </div>
 </footer>
 </body>

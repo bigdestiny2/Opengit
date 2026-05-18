@@ -4,17 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Spec — Opengit</title>
-<link rel="stylesheet" href="/assets/style.css">
+<meta name="description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="Spec — Opengit">
+<meta property="og:description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%E2%8C%AC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
-<nav class="doc-nav">
+<header class="topbar">
   <div class="wrap nav-row">
-    <a href="/" class="home-link">⌬ Opengit</a>
-    <a href="/docs/quickstart.html">Quickstart</a>
-    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="active">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+    <a href="../index.html" class="brand"><span class="glyph">⌬</span> opengit</a>
+    <nav class="topnav">
+      <a href="../docs/quickstart.html">Quickstart</a>
+      <a href="../docs/user-guide.html">Docs</a>
+      <a href="../docs/architecture.html">Architecture</a>
+      <a href="https://github.com/bigdestiny2/Opengit">GitHub</a>
+    </nav>
   </div>
-</nav>
-<article class="doc-page wrap">
+</header>
+<nav class="doc-nav"><div class="wrap nav-scroll"><a href="../docs/quickstart.html">Quickstart</a><a href="../docs/readme.html">README</a><a href="../docs/user-guide.html">User Guide</a><a href="../docs/cli.html">CLI</a><a href="../docs/architecture.html">Architecture</a><a href="../docs/dev-guide.html">Dev Guide</a><a href="../docs/relay-operators.html">Relays</a><a href="../docs/contributing.html">Contributing</a><a href="../docs/roadmap.html">Roadmap</a><a href="../docs/competitive-landscape.html">Landscape</a><a href="../docs/spec.html" class="active">Spec</a><a href="../docs/licensing.html">Licensing</a><a href="../docs/stage-4-live-result.html">Live Result</a><a href="../docs/testing.html">Testing</a><a href="../docs/hiverelay-integration.html">HiveRelay</a><a href="../docs/pearbrowser-integration.html">PearBrowser</a><a href="../docs/feasibility.html">Hist · Feasibility</a><a href="../docs/decentralization-audit.html">Hist · Audit</a><a href="../docs/deep-audit.html">Hist · Deep Audit</a><a href="../docs/improvement-research.html">Hist · Research</a><a href="../docs/state.html">Hist · State</a><a href="../docs/live-test-plan.html">Hist · Test Plan</a></div></nav>
+<main class="doc-page wrap">
 <h1>Opengit — Specification</h1>
 <blockquote><p>A fully open-source, P2P-native code forge built on the Pear/Bare/Holepunch stack. Designed to replace the operational and social layers GitHub provides, while remaining compatible with the unmodified <code>git</code> CLI.</p></blockquote>
 <p><strong>Status:</strong> Draft v0.1. Greenfield — nothing implemented yet.</p>
@@ -398,7 +408,7 @@ jobs:
 <p><code>ns:pages</code> is a Hyperdrive served via Pear's HTTP gateway: <code>pear://&lt;repo-key&gt;/pages/</code>. Builds run as CI jobs that write to the Pages drive.</p>
 <hr>
 <h2>10. Mirrors and Blind Relays (always-on availability)</h2>
-<p>Repos must remain reachable when the owner is offline. We split this into <strong>two distinct operator roles</strong>, with explicit trust differences. Conflating them is a security mistake; see <a href="DECENTRALIZATION-AUDIT.md">DECENTRALIZATION-AUDIT.md §1</a>.</p>
+<p>Repos must remain reachable when the owner is offline. We split this into <strong>two distinct operator roles</strong>, with explicit trust differences. Conflating them is a security mistake; see <a href="decentralization-audit.html">DECENTRALIZATION-AUDIT.md §1</a>.</p>
 <h3>10.1 The two roles</h3>
 <table><thead><tr><th>Role</th><th>Sees plaintext?</th><th>Use for</th><th>Implementation</th></tr></thead><tbody><tr><td><strong>Mirror</strong> (<code>opengit-mirror</code>)</td><td>Yes — refs, commits, issues, files</td><td>Public repos</td><td>Implemented in v0.0.1</td></tr><tr><td><strong>Blind relay</strong> (<code>opengit-relay</code>)</td><td>No — ciphertext only</td><td>Private repos, censorship-resistance</td><td><strong>Not implemented</strong>. Depends on HiveRelay availability or hand-rolled blind replication. v0.0.3+.</td></tr></tbody></table>
 <p>A mirror operator is in the same legal/social position as a Mastodon admin: visible content, takedown target. A blind-relay operator holds bytes they cannot decrypt — closer to a Tor-like position.</p>
@@ -411,7 +421,7 @@ jobs:
 <p>A blind relay:</p>
 <ul><li>Holds Hypercore blocks it cannot decrypt.</li><li>Joins a private-derived swarm topic (see §5.5) so DHT observers cannot enumerate private-repo existence by repo-key alone.</li><li>Serves availability with no plaintext exposure.</li></ul>
 <p><strong>Reference implementation: HiveRelay (<code>p2p-hiverelay-client</code>).</strong> The blind-relay path uses <a href="https://github.com/bigdestiny2/P2P-Hiverelay">HiveRelay</a>'s SDK directly: we pass our 32-byte content key as the relay's <code>encryptionKey</code>, the relay stores opaque encrypted Hypercore blocks across its operator network, peers with the content key connect via Hyperswarm and read normally. HiveRelay is Apache-2.0, runs natively in Bare/Pear, and does not require its operator network — operators can run a HiveRelay node on their own hardware (VPS, Umbrel, RPi) and clients can pubkey-pin them out-of-band.</p>
-<p>The integration shape, the items HiveRelay covers vs items Opengit must still build, and the v0.0.4 deliverables are documented in <a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</p>
+<p>The integration shape, the items HiveRelay covers vs items Opengit must still build, and the v0.0.4 deliverables are documented in <a href="hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</p>
 <p><strong>Author-signed mirror lists.</strong> v0.0.4+ replaces the soft <code>ns:meta.mirrors</code> list with HiveRelay-style author seeding manifests (Ed25519-signed lists of authorized relays). The signature is the authorization; tampering is detectable.</p>
 <p><strong>Pubkey-pinned relay trust (audit principle #6).</strong> Clients use the HiveRelay-style pattern of fetching <code>/.well-known/hiverelay.json</code> (signed by the relay's identity Ed25519 key) and pinning the operator's pubkey out-of-band. A reverse proxy or MITM that tampers with the doc is detected. Adopted as the canonical pattern for all Opengit relay discovery (mirrors, blind relays, indexers).</p>
 <p><strong>Unseed kill switch.</strong> A repo owner can sign an <code>unseed</code> request and broadcast it to all known relays. Relays verify the signature against the repo's owner pubkey and drop their copy. Required for DMCA/takedown UX without giving any relay operator unilateral content-removal authority over content they don't own.</p>
@@ -463,7 +473,7 @@ jobs:
 <h3>12.3 Web gateway (optional)</h3>
 <p>A Pear app exposing an HTTP gateway can serve repos at <code>https://&lt;gateway&gt;/&lt;key&gt;</code> for users without the app — read-only. Helps onboarding. Not part of the protocol; just UX.</p>
 <h3>12.4 Pages drive (mobile / browser surface, v0.0.6)</h3>
-<blockquote><p>Full integration plan: <a href="/docs/pearbrowser-integration.html">PEARBROWSER-INTEGRATION.md</a>.</p></blockquote>
+<blockquote><p>Full integration plan: <a href="pearbrowser-integration.html">PEARBROWSER-INTEGRATION.md</a>.</p></blockquote>
 <p>A repo's HEAD is rendered into a static-HTML site and <strong>published as a sibling Hyperdrive</strong> under the same Corestore (namespace <code>pages:&lt;repoKeyHex&gt;</code>). The Hyperdrive's key (independent of the repo key) becomes the canonical browse address: <code>hyper://&lt;pagesDriveKey&gt;/</code>. Anyone with PearBrowser, a hyper:// browser, or a HiveRelay HTTP gateway can browse the repo as a forge-style web view with no Opengit-specific code on the browser side.</p>
 <p><strong>Why a Hyperdrive instead of an HTTP gateway?</strong> PearBrowser already has a hybrid HTTP-relay-first / P2P-fallback fetcher for <code>hyper://</code> content. Reusing it means zero new browser code, zero new operator code on HiveRelay, and the same persistence story as v0.0.4 (relay seeds the drive — repo stays browseable when owner is offline).</p>
 <p><strong>Output paths emitted by the renderer</strong> (frozen for v1):</p>
@@ -546,13 +556,13 @@ jobs:
 <p>Added — phase 7a (pages):</p>
 <ul><li><code>OpengitForge.watchPages(repo, opts)</code> — debounced re-publish on ref-core append events; stoppable. Initial publish on watch start.</li><li><code>publishToPagesDrive(repo, { encrypted: true })</code> — encrypts the pages Hyperdrive with the repo's content key; collaborators with the key see plaintext, blind relays hold ciphertext only.</li><li>CLI: <code>opengit pages watch &lt;repo&gt; [--encrypted] [--debounce-ms N]</code>.</li><li><code>publishToPagesDrive</code> always closes its Hyperdrive in <code>finally</code> — fixed a session-leak that broke <code>forge.close()</code> across repeated publishes.</li></ul>
 <p>Added — phase 7b (relay refactor):</p>
-<ul><li><code>OpengitRelay</code> rewritten: default path is native Hyperswarm Corestore replication. <strong>No HiveRelay dependency required.</strong></li><li>HiveRelay-network seeding becomes opt-in via <code>--use-hiverelay</code> / <code>useHiveRelay: true</code>. Pulls AGPL-3.0 deps only when enabled. Clear error if not installed.</li><li><code>describeSeeds()</code> reports per-repo &quot;blind&quot; (operator has no content key) vs &quot;self-relay&quot; (operator IS a collaborator) mode.</li><li><code>OpengitRelay.fromKeyring()</code> factory — pulls content keys from operator profile keyring; operator manages who they relay for via the keyring, not via flags.</li><li><strong>License: opengit-relay is now Apache-2.0 by default</strong> (was AGPL-3.0 in v0.0.4–v0.0.6). AGPL-3.0-or-later only when <code>--use-hiverelay</code> is enabled. Documented in <a href="/docs/licensing.html">LICENSING.md</a>.</li></ul>
+<ul><li><code>OpengitRelay</code> rewritten: default path is native Hyperswarm Corestore replication. <strong>No HiveRelay dependency required.</strong></li><li>HiveRelay-network seeding becomes opt-in via <code>--use-hiverelay</code> / <code>useHiveRelay: true</code>. Pulls AGPL-3.0 deps only when enabled. Clear error if not installed.</li><li><code>describeSeeds()</code> reports per-repo &quot;blind&quot; (operator has no content key) vs &quot;self-relay&quot; (operator IS a collaborator) mode.</li><li><code>OpengitRelay.fromKeyring()</code> factory — pulls content keys from operator profile keyring; operator manages who they relay for via the keyring, not via flags.</li><li><strong>License: opengit-relay is now Apache-2.0 by default</strong> (was AGPL-3.0 in v0.0.4–v0.0.6). AGPL-3.0-or-later only when <code>--use-hiverelay</code> is enabled. Documented in <a href="licensing.html">LICENSING.md</a>.</li></ul>
 <p>Added — phase 7c (indexer):</p>
 <ul><li>New package <code>packages/opengit-indexer/</code> — opt-in indexer relay.</li><li>Allowlist-only ingestion (no firehose). Hyperbee-backed index over <code>meta:</code>, <code>token:</code> (inverted), <code>topic:</code> (per-topic membership) keyspaces.</li><li>Refuses to index private repos (visibility check at ingest time).</li><li>Protomux RPC channel <code>opengit/v1:indexer</code> over Hyperswarm topic <code>opengit/v1:index</code> for client queries (<code>search.repos</code>, <code>list.repos</code>, <code>capabilities</code>).</li><li>Client-side <code>lib/query.js</code> — <code>fanOutQuery(forge, request)</code> queries N indexers in parallel, unions+ranks results, attaches <code>seenOnIndexers</code> provenance per result.</li><li>New CLI binary: <code>opengit-indexer --repo &lt;key&gt; ...</code>.</li><li>Tokenizer is conservative (≥3-char ASCII alphanumeric, dedup); designed to be predictable and queryable from many indexers in parallel.</li></ul>
 <p>Fixed:</p>
 <ul><li><code>OpengitRepo.ready()</code> was blindly overwriting <code>_refsCore</code> even when <code>openRepo(&lt;key&gt;)</code> had pre-bound it to an explicit-key core. The remote-by-key open path produced repos with the namespace-derived key (wrong) instead of the requested key. Now <code>ready()</code> only initializes cores it hasn't been handed.</li><li><code>OpengitIndexer.stop()</code> now removes its connection-handler from the swarm before destroying it, so the indexer doesn't keep a reference to itself after close.</li><li><code>npm test</code> script now sets <code>--test-timeout=30000</code> so swarm-bridging hangs surface as failures rather than wedging the runner.</li></ul>
 <p>Documented:</p>
-<ul><li><a href="DEEP-AUDIT-v0.0.7.md">DEEP-AUDIT-v0.0.7.md</a> — comprehensive review of code surface, decentralization scorecard, threat-model gaps, test coverage assessment, license posture, spec-vs-code drift, and prioritized next moves.</li><li>LICENSING.md updated — per-package matrix, opengit-relay relicensed Apache-2.0, AGPL only with <code>--use-hiverelay</code>.</li></ul>
+<ul><li><a href="deep-audit.html">DEEP-AUDIT-v0.0.7.md</a> — comprehensive review of code surface, decentralization scorecard, threat-model gaps, test coverage assessment, license posture, spec-vs-code drift, and prioritized next moves.</li><li>LICENSING.md updated — per-package matrix, opengit-relay relicensed Apache-2.0, AGPL only with <code>--use-hiverelay</code>.</li></ul>
 <p>Test suite: <strong>87 passing across 3 consecutive runs.</strong> 2 tests deliberately skipped pending v0.0.8's swarm-integration test harness (DEEP-AUDIT §8 gap #1).</p>
 <h3>v0.0.6</h3>
 <p>Phase: pages drive — render repo HEAD into a static-HTML Hyperdrive browseable from PearBrowser via <code>hyper://&lt;pagesDriveKey&gt;/</code>. Closes the &quot;browse Opengit repos in PearBrowser&quot; loop with zero browser-side code change.</p>
@@ -584,7 +594,7 @@ jobs:
 <ul><li><code>MultiWriterRefs</code> (Autobase-backed) at <code>ns:refs-inputs</code> with deterministic <code>apply</code> function. Opt-in at create with <code>--multi-writer</code>. Single-writer repos created in v0.0.3 keep working.</li><li>Inputs: <code>ref-set</code> / <code>ref-del</code> / <code>add-writer</code> / <code>remove-writer</code>, all signed.</li><li>Apply enforces: signature validity, fast-forward, writer-set membership, owner-only writer management.</li><li>New CLI: <code>opengit init &lt;name&gt; --multi-writer</code>, <code>add-writer</code>, <code>remove-writer</code>, <code>list-writers</code>.</li><li>New <code>ns:meta</code> keys: <code>multiwriter</code> (boolean), <code>bootstrap</code> (<code>{owners, writers}</code>).</li></ul>
 <p>Added — phase 4c (blind-relay scaffolding):</p>
 <ul><li>New package <code>packages/opengit-relay/</code> — thin wrapper over <code>p2p-hiverelay-client</code>. Hard-deps on the SDK (refuses to run silently in plaintext mode).</li><li><code>OpengitForge.publishToBlindRelay(repo, opts)</code> — lazy-loads HiveRelay client; passes repo's content key as <code>encryptionKey</code>.</li><li><code>PinnedRelays</code> (<code>$OPENGIT_HOME/profiles/&lt;p&gt;/pinned-relays.json</code>) — out-of-band trust pins for relay identities (matches HiveRelay's <code>client.pinRelay()</code> shape).</li><li><code>manifest</code> module in <code>opengit-relay</code> — Ed25519-signed author seeding manifests with TTL + skew protection, canonical JSON (sorted keys) for stable signatures across encoders. Compatible in shape with HiveRelay's manifest endpoint.</li><li>New CLI: <code>pin-relay</code>, <code>unpin-relay</code>, <code>list-pins</code>, <code>blind-publish</code>, <code>unseed</code> (last is lib-only until v0.0.5 wires the broadcast plumbing).</li></ul>
-<p>Plan + verified upstream reality: see <a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</p>
+<p>Plan + verified upstream reality: see <a href="hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</p>
 <h3>v0.0.3</h3>
 <p>Added:</p>
 <ul><li>Shadow-bridge architecture for <code>git-remote-opengit</code> (§5.1 fully rewritten).</li><li><code>ShadowRepo</code> library type: per-repo bare git directory with <code>pullFromRepo</code> (Corestore→shadow) and <code>pushToRepo</code> (shadow→Corestore).</li><li>Helper now advertises <code>connect</code>, spawns <code>git upload-pack</code> / <code>git receive-pack</code> against the shadow, pipes stdio, syncs back on push.</li><li>Custom byte-mode stdin reader so the helper can switch from line-based protocol to raw smart-protocol passthrough at the moment of <code>connect</code> without dropping bytes.</li><li><code>gitAvailable()</code> probe + clean error if <code>git</code> binary is missing (exit 4).</li></ul>
@@ -601,13 +611,11 @@ jobs:
 <ul><li>Repo visibility is fixed at init time (no in-place re-encryption).</li><li>v0.0.2 ships repo-creator-only key management; collaborator key sharing is out-of-band until v0.0.3.</li></ul>
 <h3>v0.0.1 (initial)</h3>
 <p>Initial protocol publication. See git history for the diff against this revision.</p>
-</article>
+</main>
 <footer>
   <div class="wrap">
-    <p>
-      Apache-2.0 by default · No telemetry · No phone-home ·
-      <a href="https://github.com/bigdestiny2/opengit">source</a>
-    </p>
+    <p><span class="glyph">⌬</span> <strong>opengit</strong> — a peer-to-peer code forge.</p>
+    <p class="muted">Apache-2.0 (AGPL only via the explicit <code>--use-hiverelay</code> opt-in) · No telemetry · No phone-home · No foundation · <a href="https://github.com/bigdestiny2/Opengit">source</a></p>
   </div>
 </footer>
 </body>

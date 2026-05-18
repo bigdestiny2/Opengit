@@ -4,23 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Contributing — Opengit</title>
-<link rel="stylesheet" href="/assets/style.css">
+<meta name="description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="Contributing — Opengit">
+<meta property="og:description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%E2%8C%AC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
-<nav class="doc-nav">
+<header class="topbar">
   <div class="wrap nav-row">
-    <a href="/" class="home-link">⌬ Opengit</a>
-    <a href="/docs/quickstart.html">Quickstart</a>
-    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="active">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+    <a href="../index.html" class="brand"><span class="glyph">⌬</span> opengit</a>
+    <nav class="topnav">
+      <a href="../docs/quickstart.html">Quickstart</a>
+      <a href="../docs/user-guide.html">Docs</a>
+      <a href="../docs/architecture.html">Architecture</a>
+      <a href="https://github.com/bigdestiny2/Opengit">GitHub</a>
+    </nav>
   </div>
-</nav>
-<article class="doc-page wrap">
+</header>
+<nav class="doc-nav"><div class="wrap nav-scroll"><a href="../docs/quickstart.html">Quickstart</a><a href="../docs/readme.html">README</a><a href="../docs/user-guide.html">User Guide</a><a href="../docs/cli.html">CLI</a><a href="../docs/architecture.html">Architecture</a><a href="../docs/dev-guide.html">Dev Guide</a><a href="../docs/relay-operators.html">Relays</a><a href="../docs/contributing.html" class="active">Contributing</a><a href="../docs/roadmap.html">Roadmap</a><a href="../docs/competitive-landscape.html">Landscape</a><a href="../docs/spec.html">Spec</a><a href="../docs/licensing.html">Licensing</a><a href="../docs/stage-4-live-result.html">Live Result</a><a href="../docs/testing.html">Testing</a><a href="../docs/hiverelay-integration.html">HiveRelay</a><a href="../docs/pearbrowser-integration.html">PearBrowser</a><a href="../docs/feasibility.html">Hist · Feasibility</a><a href="../docs/decentralization-audit.html">Hist · Audit</a><a href="../docs/deep-audit.html">Hist · Deep Audit</a><a href="../docs/improvement-research.html">Hist · Research</a><a href="../docs/state.html">Hist · State</a><a href="../docs/live-test-plan.html">Hist · Test Plan</a></div></nav>
+<main class="doc-page wrap">
 <h1>Contributing to Opengit</h1>
-<p>Opengit dogfoods its own forge. The collaboration model is <strong>fork → PR over <code>opengit://</code></strong> — the exact workflow <a href="/docs/user-guide.html">docs/USER-GUIDE.md</a> §6 describes, proven with Opengit's own repo as payload (11/11) and live across two machines.</p>
-<blockquote><p>GitHub (<code>github.com/bigdestiny2/Opengit</code>) is currently the <strong>bootstrap mirror</strong> — a known-good channel while the self-host cutover (Stage 5.3–5.4, see <a href="/docs/roadmap.html">docs/ROADMAP.md</a>) is in progress. Until then you may open PRs either via GitHub <em>or</em> via the <code>opengit://</code> flow below; the <code>opengit://</code> flow is preferred and is what we're migrating fully to.</p></blockquote>
+<p>Opengit dogfoods its own forge. The collaboration model is <strong>fork → PR over <code>opengit://</code></strong> — the exact workflow <a href="user-guide.html">docs/USER-GUIDE.md</a> §6 describes, proven with Opengit's own repo as payload (11/11) and live across two machines.</p>
+<blockquote><p>GitHub (<code>github.com/bigdestiny2/Opengit</code>) is currently the <strong>bootstrap mirror</strong> — a known-good channel while the self-host cutover (Stage 5.3–5.4, see <a href="roadmap.html">docs/ROADMAP.md</a>) is in progress. Until then you may open PRs either via GitHub <em>or</em> via the <code>opengit://</code> flow below; the <code>opengit://</code> flow is preferred and is what we're migrating fully to.</p></blockquote>
 <hr>
 <h2>1. Before you touch code</h2>
-<ul><li>Read <a href="/docs/architecture.html">docs/ARCHITECTURE.md</a> and <a href="/docs/dev-guide.html">docs/DEV-GUIDE.md</a>.</li><li><code>npm install</code>, then confirm a green baseline:</li></ul>
+<ul><li>Read <a href="architecture.html">docs/ARCHITECTURE.md</a> and <a href="dev-guide.html">docs/DEV-GUIDE.md</a>.</li><li><code>npm install</code>, then confirm a green baseline:</li></ul>
 <pre data-lang="bash"><code>npm test                           # 119 pass / 0 fail / 4 skip
 node scripts/dry-run-collab.js     # 9/9
 node scripts/dry-run-fork-push.js  # 11/11
@@ -31,9 +41,9 @@ node scripts/preflight-relay.js    # 12/12</code></pre>
 <p>So:</p>
 <ul><li><strong>One unproven variable at a time.</strong> A stacked failure tells you nothing.</li><li><strong>If you add/realter a network or data path, add a dry-run for it</strong> — a script that exercises the <em>real</em> code over a <code>SwarmFixture</code>, with the real repo as payload where it matters, asserting a concrete outcome, with every wait hard-bounded so it always prints PASS/FAIL. Model it on <code>scripts/dry-run-fork-push.js</code>.</li><li><strong>Trust but verify.</strong> A script &quot;passing&quot; means nothing until you've read its asserted outcome. Make assertions specific (byte-checks, reachable objects, state == merged) — not &quot;didn't throw&quot;.</li></ul>
 <h2>3. Make the change</h2>
-<ul><li>Match existing style: <code>node:test</code> + <code>node:assert/strict</code>, <code>b4a</code>/<code>z32</code>, actionable error strings, no test framework, don't reimplement git.</li><li>Respect the decentralization invariants (<a href="/docs/architecture.html">ARCHITECTURE.md</a>): no telemetry, no registry, no implicit trust, Apache-2.0 unless the explicit <code>--use-hiverelay</code> AGPL opt-in.</li><li>Keep commits atomic with clear &quot;why&quot; messages.</li></ul>
+<ul><li>Match existing style: <code>node:test</code> + <code>node:assert/strict</code>, <code>b4a</code>/<code>z32</code>, actionable error strings, no test framework, don't reimplement git.</li><li>Respect the decentralization invariants (<a href="architecture.html">ARCHITECTURE.md</a>): no telemetry, no registry, no implicit trust, Apache-2.0 unless the explicit <code>--use-hiverelay</code> AGPL opt-in.</li><li>Keep commits atomic with clear &quot;why&quot; messages.</li></ul>
 <h2>4. Verify (the gate)</h2>
-<p>Re-run the relevant checklist from <a href="/docs/dev-guide.html">DEV-GUIDE.md</a> §&quot;Testing your changes&quot;. At minimum <code>npm test</code> stays 119/0/4 with the <strong>same 4 skips</strong> (don't &quot;fix&quot; a deliberate harness-boundary skip by forcing the fixture). Run the dry-run(s) for any path you touched.</p>
+<p>Re-run the relevant checklist from <a href="dev-guide.html">DEV-GUIDE.md</a> §&quot;Testing your changes&quot;. At minimum <code>npm test</code> stays 119/0/4 with the <strong>same 4 skips</strong> (don't &quot;fix&quot; a deliberate harness-boundary skip by forcing the fixture). Run the dry-run(s) for any path you touched.</p>
 <p>No leaked processes: scripts must close forges + teardown fixtures in <code>finally</code>. Long-lived roles (<code>serve</code>, <code>collab maintainer</code>) are intentional and exempt — everything else must exit clean.</p>
 <h2>5. Submit</h2>
 <h3>Via <code>opengit://</code> (preferred — the dogfood path)</h3>
@@ -50,13 +60,11 @@ opengit collab contributor --repo &lt;UPSTREAM_KEY&gt;   # open a signed PR refe
 <h2>6. What gets merged</h2>
 <ul><li>All gates green; the 4 documented skips unchanged.</li><li>New network/data paths have a dry-run that proves them.</li><li>Decentralization invariants intact; license boundary intact.</li><li>The change is understood, not just &quot;tests pass&quot; — explain the reasoning.</li></ul>
 <p>Thank you for helping build a forge that needs no forge to host it.</p>
-</article>
+</main>
 <footer>
   <div class="wrap">
-    <p>
-      Apache-2.0 by default · No telemetry · No phone-home ·
-      <a href="https://github.com/bigdestiny2/opengit">source</a>
-    </p>
+    <p><span class="glyph">⌬</span> <strong>opengit</strong> — a peer-to-peer code forge.</p>
+    <p class="muted">Apache-2.0 (AGPL only via the explicit <code>--use-hiverelay</code> opt-in) · No telemetry · No phone-home · No foundation · <a href="https://github.com/bigdestiny2/Opengit">source</a></p>
   </div>
 </footer>
 </body>

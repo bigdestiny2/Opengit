@@ -4,19 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Feasibility (history) — Opengit</title>
-<link rel="stylesheet" href="/assets/style.css">
+<meta name="description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="Feasibility (history) — Opengit">
+<meta property="og:description" content="A peer-to-peer code forge. Git hosting, issues, and pull requests with no central server, on the Pear/Holepunch stack. Proven live across two machines over the DHT.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E%E2%8C%AC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
-<nav class="doc-nav">
+<header class="topbar">
   <div class="wrap nav-row">
-    <a href="/" class="home-link">⌬ Opengit</a>
-    <a href="/docs/quickstart.html">Quickstart</a>
-    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="active">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+    <a href="../index.html" class="brand"><span class="glyph">⌬</span> opengit</a>
+    <nav class="topnav">
+      <a href="../docs/quickstart.html">Quickstart</a>
+      <a href="../docs/user-guide.html">Docs</a>
+      <a href="../docs/architecture.html">Architecture</a>
+      <a href="https://github.com/bigdestiny2/Opengit">GitHub</a>
+    </nav>
   </div>
-</nav>
-<article class="doc-page wrap">
+</header>
+<nav class="doc-nav"><div class="wrap nav-scroll"><a href="../docs/quickstart.html">Quickstart</a><a href="../docs/readme.html">README</a><a href="../docs/user-guide.html">User Guide</a><a href="../docs/cli.html">CLI</a><a href="../docs/architecture.html">Architecture</a><a href="../docs/dev-guide.html">Dev Guide</a><a href="../docs/relay-operators.html">Relays</a><a href="../docs/contributing.html">Contributing</a><a href="../docs/roadmap.html">Roadmap</a><a href="../docs/competitive-landscape.html">Landscape</a><a href="../docs/spec.html">Spec</a><a href="../docs/licensing.html">Licensing</a><a href="../docs/stage-4-live-result.html">Live Result</a><a href="../docs/testing.html">Testing</a><a href="../docs/hiverelay-integration.html">HiveRelay</a><a href="../docs/pearbrowser-integration.html">PearBrowser</a><a href="../docs/feasibility.html" class="active">Hist · Feasibility</a><a href="../docs/decentralization-audit.html">Hist · Audit</a><a href="../docs/deep-audit.html">Hist · Deep Audit</a><a href="../docs/improvement-research.html">Hist · Research</a><a href="../docs/state.html">Hist · State</a><a href="../docs/live-test-plan.html">Hist · Test Plan</a></div></nav>
+<main class="doc-page wrap">
 <h1>Opengit — Feasibility Study</h1>
-<blockquote><p>Companion to <a href="/docs/spec.html">SPEC.md</a>. Component-by-component honest assessment of what we know works, what is engineering effort, and what is research risk.</p></blockquote>
+<blockquote><p>Companion to <a href="spec.html">SPEC.md</a>. Component-by-component honest assessment of what we know works, what is engineering effort, and what is research risk.</p></blockquote>
 <p><strong>Status:</strong> Draft v0.1. Covers v1 scope; deeper-future items (ZK CI, etc.) noted but not deeply analyzed.</p>
 <hr>
 <h2>Rating scale</h2>
@@ -124,7 +134,7 @@
 <p>v1 ships as &quot;run your own runner.&quot; That's enough to demonstrate it works and serve project teams; it is not enough to make individual hobbyists' single-developer projects' CI just-work the way GitHub does.</p>
 <hr>
 <h2>10. HiveRelay (blind relay infrastructure)</h2>
-<p><strong>Maps to:</strong> SPEC §10. Verified upstream snapshot in <a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</p>
+<p><strong>Maps to:</strong> SPEC §10. Verified upstream snapshot in <a href="hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</p>
 <h3>Verdict: 🟢 GREEN — verified ready 2026-05-03</h3>
 <h3>Why</h3>
 <ul><li><a href="https://github.com/bigdestiny2/P2P-Hiverelay">P2P-Hiverelay</a> is in active production (foundation network of 5+ relays across NA/APAC), Apache-2.0, with <code>p2p-hiverelay-client</code> v0.5.1 published.</li><li>Blind-encrypted seeding is a stable v0.5+ surface: <code>client.publish(dir, { encryptionKey })</code>. Relay holds opaque blocks, peers with the key replicate normally.</li><li>Capability-doc signing (v0.6.0) + diverse-quorum reads + signed fork proofs match audit principles #6 (&quot;no fail-closed on default unreachable&quot;) and #9 (&quot;censorship-resistant by construction&quot;). We get them by integration, not by reimplementation.</li><li>Pear/Bare native runtime support; same DHT we already use; no parallel network.</li><li>Self-hostable: HiveRelay nodes run on Umbrel, RPi, VPS, Mac Mini. Foundation network is the <em>convenient</em> default operator pool, not the protocol.</li><li>Author seeding manifests (Ed25519-signed list of &quot;fetch my drives from these relays&quot;) give us a cleaner <code>ns:meta.mirrors</code> replacement for free.</li></ul>
@@ -191,7 +201,7 @@
 <p>The legal surface is a relay-operator surface, like every other federated/P2P network. Document it; don't pretend the surface doesn't exist.</p>
 <hr>
 <h2>18. Aggregate risk register</h2>
-<table><thead><tr><th>#</th><th>Risk</th><th>Severity</th><th>Likelihood</th><th>Mitigation strategy</th></tr></thead><tbody><tr><td>1</td><td>Search UX disappoints early users</td><td>High</td><td>High</td><td>Run a reference indexer; lean on follow-graph for primary discovery</td></tr><tr><td>2</td><td>~~HiveRelay isn't ready / mature enough at v1 ship~~</td><td>~~High~~</td><td>~~Medium~~</td><td><strong>CLOSED 2026-05-03</strong>: HiveRelay v0.5+ verified ready (Apache-2.0, blind-mirror SDK, signed capability docs, diverse-quorum, fork detection). Plan in <a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</td></tr><tr><td>3</td><td>Autobase view performance at scale</td><td>Medium</td><td>Medium</td><td>Use snapshots; benchmark early; &quot;single-writer mode&quot; fast path</td></tr><tr><td>4</td><td>No sustainable runner economics</td><td>Medium</td><td>High</td><td>Self-hosted v1; design for paid v2; partner with one or two community ops</td></tr><tr><td>5</td><td>Identity-key compromise</td><td>High (per user)</td><td>Low</td><td>Document; plan v2 rotation; sub-keys for commit signing</td></tr><tr><td>6</td><td>Onboarding friction (peer discovery, setup)</td><td>Medium</td><td>High</td><td>Ship one-click installer; reference relay configured by default</td></tr><tr><td>7</td><td>Migration from GitHub stalls adoption</td><td>Medium</td><td>Medium</td><td>Build importer; prioritize issues + PRs + releases</td></tr><tr><td>8</td><td>Legal pressure on default relays</td><td>Medium</td><td>Medium</td><td>Multiple defaults; clear operator policy; jurisdictional diversity</td></tr><tr><td>9</td><td>Spam in issues makes UX bad</td><td>Medium</td><td>Medium</td><td>Moderation tooling early; reputation in v2</td></tr><tr><td>10</td><td>Pear ecosystem dependency (Holepunch viability)</td><td>High</td><td>Low</td><td>Stack is OSS; we could fork primitives if needed; not unique to us</td></tr></tbody></table>
+<table><thead><tr><th>#</th><th>Risk</th><th>Severity</th><th>Likelihood</th><th>Mitigation strategy</th></tr></thead><tbody><tr><td>1</td><td>Search UX disappoints early users</td><td>High</td><td>High</td><td>Run a reference indexer; lean on follow-graph for primary discovery</td></tr><tr><td>2</td><td>~~HiveRelay isn't ready / mature enough at v1 ship~~</td><td>~~High~~</td><td>~~Medium~~</td><td><strong>CLOSED 2026-05-03</strong>: HiveRelay v0.5+ verified ready (Apache-2.0, blind-mirror SDK, signed capability docs, diverse-quorum, fork detection). Plan in <a href="hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>.</td></tr><tr><td>3</td><td>Autobase view performance at scale</td><td>Medium</td><td>Medium</td><td>Use snapshots; benchmark early; &quot;single-writer mode&quot; fast path</td></tr><tr><td>4</td><td>No sustainable runner economics</td><td>Medium</td><td>High</td><td>Self-hosted v1; design for paid v2; partner with one or two community ops</td></tr><tr><td>5</td><td>Identity-key compromise</td><td>High (per user)</td><td>Low</td><td>Document; plan v2 rotation; sub-keys for commit signing</td></tr><tr><td>6</td><td>Onboarding friction (peer discovery, setup)</td><td>Medium</td><td>High</td><td>Ship one-click installer; reference relay configured by default</td></tr><tr><td>7</td><td>Migration from GitHub stalls adoption</td><td>Medium</td><td>Medium</td><td>Build importer; prioritize issues + PRs + releases</td></tr><tr><td>8</td><td>Legal pressure on default relays</td><td>Medium</td><td>Medium</td><td>Multiple defaults; clear operator policy; jurisdictional diversity</td></tr><tr><td>9</td><td>Spam in issues makes UX bad</td><td>Medium</td><td>Medium</td><td>Moderation tooling early; reputation in v2</td></tr><tr><td>10</td><td>Pear ecosystem dependency (Holepunch viability)</td><td>High</td><td>Low</td><td>Stack is OSS; we could fork primitives if needed; not unique to us</td></tr></tbody></table>
 <hr>
 <h2>19. Build effort estimate (rough)</h2>
 <table><thead><tr><th>Component</th><th>Est. eng-weeks (1 strong dev)</th></tr></thead><tbody><tr><td><code>opengit-core</code> lib (Corestore wrapper, refs Hyperbee, objects Hyperblobs)</td><td>4–6</td></tr><tr><td><code>git-remote-opengit</code> helper</td><td>2–3</td></tr><tr><td><code>opengit-relay</code> (HiveRelay-based blind path)</td><td>1–2 (HiveRelay verified ready 2026-05-03)</td></tr><tr><td>Single-writer end-to-end demo (push/clone via relay)</td><td>2</td></tr><tr><td>Multi-writer Autobase ref management</td><td>4–6</td></tr><tr><td>Identity feeds</td><td>2</td></tr><tr><td>Issue/PR Autobase + apply functions</td><td>4–6</td></tr><tr><td>Pear app shell (UI)</td><td>6–10</td></tr><tr><td>Indexer reference implementation</td><td>4–6</td></tr><tr><td>CI runner reference implementation</td><td>4–6</td></tr><tr><td><code>opengit</code> CLI</td><td>2–3</td></tr><tr><td>GitHub importer</td><td>3–4</td></tr><tr><td>Documentation, packaging, install paths</td><td>3–4</td></tr><tr><td><strong>MVP total (items 1–4)</strong></td><td><strong>~10–13 eng-weeks</strong></td></tr><tr><td><strong>v0.5 (single-writer + identity + issues)</strong></td><td><strong>~25–30 eng-weeks</strong></td></tr><tr><td><strong>v1 (everything but ZK CI / paid runners)</strong></td><td><strong>~50–70 eng-weeks</strong></td></tr></tbody></table>
@@ -199,7 +209,7 @@
 <hr>
 <h2>20. Recommended path forward</h2>
 <h3>Phase 0 (de-risk the assumptions)</h3>
-<ol><li>~~<strong>Verify HiveRelay status</strong> — is it shipped/usable, or do we build equivalent?~~ <strong>CLOSED 2026-05-03</strong> (<a href="/docs/hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>).</li><li><strong>Verify Autobase scale</strong> — write a synthetic benchmark with 10k inputs, measure view rebuild time. Is it acceptable?</li><li>~~<strong>Build a 2-week prototype</strong> of <code>opengit-core</code> + <code>git-remote-opengit</code> against a single Hypercore (no Autobase yet). Confirm <code>git clone opengit://</code> actually works.~~ <strong>DONE in v0.0.3</strong> — shadow-bridge implementation in <a href="packages/git-remote-opengit/">packages/git-remote-opengit/</a> with the supporting <a href="packages/opengit-core/lib/shadow.js">ShadowRepo</a> primitive.</li></ol>
+<ol><li>~~<strong>Verify HiveRelay status</strong> — is it shipped/usable, or do we build equivalent?~~ <strong>CLOSED 2026-05-03</strong> (<a href="hiverelay-integration.html">HIVERELAY-INTEGRATION.md</a>).</li><li><strong>Verify Autobase scale</strong> — write a synthetic benchmark with 10k inputs, measure view rebuild time. Is it acceptable?</li><li>~~<strong>Build a 2-week prototype</strong> of <code>opengit-core</code> + <code>git-remote-opengit</code> against a single Hypercore (no Autobase yet). Confirm <code>git clone opengit://</code> actually works.~~ <strong>DONE in v0.0.3</strong> — shadow-bridge implementation in <a href="packages/git-remote-opengit/">packages/git-remote-opengit/</a> with the supporting <a href="packages/opengit-core/lib/shadow.js">ShadowRepo</a> primitive.</li></ol>
 <h3>Phase 1: MVP (after de-risk)</h3>
 <ul><li>Single-writer repos</li><li>Pinning relay</li><li><code>git clone</code> / <code>git push</code> from stock git via the helper</li><li>Demo: A pushes, A's laptop sleeps, B clones from relay</li></ul>
 <h3>Phase 2: collaboration</h3>
@@ -214,13 +224,11 @@
 <p>The single highest-leverage demo to build first is <strong>&quot;clone from a sleeping laptop's repo via a relay.&quot;</strong> It validates Corestore-as-repo, <code>git-remote-opengit</code>, and HiveRelay all in one user-visible moment. Two weeks of work, and the rest of the spec is downstream of it.</p>
 <p>The single biggest UX risk is search/discovery. Plan to run a reference indexer alongside the protocol launch, frame it as one option among many, and accept that v1 will not have GitHub's discovery polish.</p>
 <p>Recommend proceeding to Phase 0 de-risk.</p>
-</article>
+</main>
 <footer>
   <div class="wrap">
-    <p>
-      Apache-2.0 by default · No telemetry · No phone-home ·
-      <a href="https://github.com/bigdestiny2/opengit">source</a>
-    </p>
+    <p><span class="glyph">⌬</span> <strong>opengit</strong> — a peer-to-peer code forge.</p>
+    <p class="muted">Apache-2.0 (AGPL only via the explicit <code>--use-hiverelay</code> opt-in) · No telemetry · No phone-home · No foundation · <a href="https://github.com/bigdestiny2/Opengit">source</a></p>
   </div>
 </footer>
 </body>
