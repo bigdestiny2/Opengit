@@ -53,8 +53,34 @@ async function main () {
     await repo.openPR({ title: 'Example: fork → fetch → merge', body: 'PRs render the same way. Real contribution flow is in the User Guide §6.', fromRepo: repo.keyHex, fromRef: 'refs/heads/feature', toRef: 'refs/heads/main' })
   } catch (e) { process.stdout.write('(demo issue/PR skipped: ' + e.message + ')\n') }
 
+  // Seed a couple of small extra repos so the FORGE HOMEPAGE shows a real
+  // multi-repo list (the homepage is an index, not a single repo).
+  const repos = [repo]
+  async function demo (name, desc, files) {
+    const w = fs.mkdtempSync(path.join(os.tmpdir(), 'og-demo-' + name + '-'))
+    for (const [fp, content] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(w, fp)), { recursive: true })
+      fs.writeFileSync(path.join(w, fp), content)
+    }
+    const { spawnSync } = require('child_process')
+    const g = (args) => spawnSync('git', args, { cwd: w })
+    g(['init', '-q', '-b', 'main']); g(['config', 'user.email', 'demo@opengit.test'])
+    g(['config', 'user.name', 'Demo']); g(['add', '-A']); g(['commit', '-q', '-m', 'initial commit'])
+    const r = await forge.createRepo(name, { description: desc })
+    const sh = new ShadowRepo({ repoKeyHex: r.keyHex, profileName: 'preview', root: shadowRoot })
+    sh.init(); copyDir(path.join(w, '.git'), sh.path); await sh.pushToRepo(r)
+    repos.push(r)
+  }
+  try {
+    await demo('hello-world', 'The smallest possible repo — a README and one commit.',
+      { 'README.md': '# hello-world\n\nA tiny demo repo to show the forge homepage lists **multiple** repositories.\n' })
+    await demo('notes', 'A few markdown notes — demonstrates the file browser + renderer.',
+      { 'README.md': '# notes\n\n- [x] forge homepage lists repos\n- [x] light + dark themes\n- [ ] your repo here\n', 'ideas/p2p.md': '# p2p notes\n\nThe repo *is* its manifest key. No server.\n' })
+    await repos[2].openIssue({ title: 'Demo issue on the notes repo', body: 'Each repo has its own issues/PRs, namespaced under `r/<key>/`.' })
+  } catch (e) { process.stdout.write('(demo repos skipped: ' + e.message + ')\n') }
+
   let n = 0
-  for await (const { path: p, bytes } of pages.renderApp({ repo, profileName: 'preview', shadowRoot })) {
+  for await (const { path: p, bytes } of pages.renderApp({ repos, profileName: 'preview', shadowRoot })) {
     const out = path.join(APPDIR, p.replace(/^\//, ''))
     fs.mkdirSync(path.dirname(out), { recursive: true })
     fs.writeFileSync(out, bytes)

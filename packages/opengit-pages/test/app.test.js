@@ -74,34 +74,38 @@ test('renderApp emits a self-contained SPA + well-formed JSON API', async (t) =>
     // index.html uses RELATIVE asset paths (works at hyper:// root & web subpath)
     assert.match(str('/index.html'), /href="assets\/app\.css"/)
     assert.match(str('/index.html'), /src="assets\/app\.js"/)
-    assert.doesNotMatch(str('/index.html'), /(href|src)="\/(assets|api)/)
+    assert.doesNotMatch(str('/index.html'), /(href|src)="\/(assets|api|r)\//)
 
-    // api/repo.json
-    const repoJson = JSON.parse(str('/api/repo.json'))
+    // forge index = the homepage data (multi-repo; here exactly one)
+    const idx = JSON.parse(str('/api/index.json'))
+    assert.equal(idx.shape, 'opengit-forge/1')
+    assert.equal(idx.count, 1)
+    assert.equal(idx.repos[0].name, 'fixture')
+    const rk = idx.repos[0].key
+    assert.ok(rk && rk.length > 20)
+    const R = `/r/${rk}`
+
+    // per-repo api lives under /r/<key>/
+    const repoJson = JSON.parse(str(`${R}/api/repo.json`))
     assert.equal(repoJson.name, 'fixture')
     assert.equal(repoJson.defaultBranch, 'main')
     assert.equal(repoJson.shape, 'opengit-web-app/1')
-    assert.ok(Array.isArray(repoJson.branches) && repoJson.branches.length >= 1)
     const sb = repoJson.branches.find(b => b.name === 'main').safe
-    assert.ok(repoJson.repoKeyZ32 && repoJson.repoKeyZ32.length > 20)
 
-    // tree + raw blob
-    const tree = JSON.parse(str(`/api/tree/${sb}.json`))
+    const tree = JSON.parse(str(`${R}/api/tree/${sb}.json`))
     assert.ok(tree.entries.some(e => e.path === 'README.md' && e.type === 'blob' && e.text === true))
     assert.ok(tree.entries.some(e => e.path === 'src/main.js' && e.type === 'blob'))
-    assert.equal(str(`/raw/${sb}/README.md`), '# Fixture\n\nA tiny **test** repo.\n')
+    assert.equal(str(`${R}/raw/${sb}/README.md`), '# Fixture\n\nA tiny **test** repo.\n')
 
-    // commits + commit detail
-    const commits = JSON.parse(str(`/api/commits/${sb}.json`))
+    const commits = JSON.parse(str(`${R}/api/commits/${sb}.json`))
     assert.ok(commits.commits.length >= 1)
     const oid = commits.commits[0].oid
-    const detail = JSON.parse(str(`/api/commit/${oid}.json`))
+    const detail = JSON.parse(str(`${R}/api/commit/${oid}.json`))
     assert.equal(detail.oid, oid)
     assert.ok('diff' in detail)
 
-    // issues / prs endpoints exist (arrays even when empty) + manifest
-    assert.ok(Array.isArray(JSON.parse(str('/api/issues.json'))))
-    assert.ok(Array.isArray(JSON.parse(str('/api/prs.json'))))
+    assert.ok(Array.isArray(JSON.parse(str(`${R}/api/issues.json`))))
+    assert.ok(Array.isArray(JSON.parse(str(`${R}/api/prs.json`))))
     const man = JSON.parse(str('/manifest.json'))
     assert.equal(man.entry, '/index.html')
     assert.equal(man['opengit:shape'], 'web-app')
@@ -119,9 +123,10 @@ test('renderApp surfaces a signed issue in the JSON API', async (t) => {
       { repo, profileName: 'webapp-test', shadowRoot }, pages.renderApp
     )
     const str = (p) => map.get(p) && Buffer.from(map.get(p)).toString('utf8')
-    const issues = JSON.parse(str('/api/issues.json'))
+    const R = `/r/${repo.keyZ32}`
+    const issues = JSON.parse(str(`${R}/api/issues.json`))
     assert.ok(issues.some(i => i.issueId === id && i.title === 'web-app test issue'))
-    const one = JSON.parse(str(`/api/issue/${id}.json`))
+    const one = JSON.parse(str(`${R}/api/issue/${id}.json`))
     assert.ok(one.issue && one.issue.title === 'web-app test issue')
     assert.ok(Array.isArray(one.comments))
   } finally {
