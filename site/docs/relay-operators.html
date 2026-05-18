@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relay Operators — Opengit</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="doc-nav">
+  <div class="wrap nav-row">
+    <a href="/" class="home-link">⌬ Opengit</a>
+    <a href="/docs/quickstart.html">Quickstart</a>
+    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="active">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+  </div>
+</nav>
+<article class="doc-page wrap">
+<h1>Relay &amp; Mirror Operator Guide</h1>
+<p>P2P has no implicit always-on server. A repo is reachable only while the owner is online, a peer has it open, or <strong>someone pins it</strong>. This guide is for the people who run that pinning infrastructure — and for repo owners who want owner-offline availability.</p>
+<p>There is <strong>no Opengit foundation</strong>. Anyone runs a relay on their own hardware. Trust is always the operator's explicit pubkey-pinning + content-key choice.</p>
+<hr>
+<h2>Pick the right tool</h2>
+<table><thead><tr><th>You want to keep alive…</th><th>Use</th><th>Sees plaintext?</th><th>Deps / license</th></tr></thead><tbody><tr><td>a <strong>public</strong> repo</td><td><code>opengit-mirror</code></td><td>yes (it's public)</td><td>native Hyperswarm, zero extra deps (Apache-2.0)</td></tr><tr><td>a <strong>public</strong> repo, Holepunch's official pinning</td><td><code>opengit-mirror --blind-peer</code></td><td>yes</td><td><code>blind-peer</code> (optional dep)</td></tr><tr><td>a <strong>private</strong> repo (encrypted)</td><td><code>opengit-relay</code></td><td><strong>no</strong> (ciphertext only)</td><td>native (Apache-2.0)</td></tr><tr><td>a private repo via the HiveRelay operator network</td><td><code>opengit-relay --use-hiverelay</code></td><td>no</td><td>pulls <strong>AGPL-3.0</strong> <code>p2p-hiverelay-client</code></td></tr><tr><td>owner-offline for <em>your own</em> repo</td><td><code>opengit serve &lt;repo&gt; --mirror &lt;pubkey&gt;</code></td><td>n/a</td><td>client of a blind-peer you trust</td></tr></tbody></table>
+<p><strong>License boundary (important):</strong> everything is <strong>Apache-2.0</strong> on the native path. <code>--use-hiverelay</code> is the <em>only</em> switch that pulls AGPL-3.0 code. Without it, nothing AGPL is loaded. See <a href="../LICENSING.md">../LICENSING.md</a>.</p>
+<h2>Public-repo mirror</h2>
+<pre data-lang="bash"><code># native (default): hand-rolled Hyperswarm Corestore replication, no extra deps
+node packages/opengit-mirror/bin/opengit-mirror.js --repo &lt;key&gt;
+
+# or run a real Holepunch blind-peer server (RocksDB-backed, optional dep)
+node packages/opengit-mirror/bin/opengit-mirror.js --repo &lt;key&gt; --blind-peer</code></pre>
+<p>Mirror operators <strong>see plaintext</strong> — by definition, the repo is public. Run as many as you like across regions; clients reach whichever is online.</p>
+<h2>Private-repo blind relay</h2>
+<p><code>opengit-relay</code> replicates the <strong>encrypted</strong> Corestore. The operator never has the content key and never sees plaintext.</p>
+<pre data-lang="bash"><code># native path — Apache-2.0, no AGPL deps
+node packages/opengit-relay/bin/opengit-relay.js --repo &lt;key&gt;
+
+# HiveRelay operator network — opt-in, pulls AGPL-3.0
+node packages/opengit-relay/bin/opengit-relay.js --repo &lt;key&gt; --use-hiverelay</code></pre>
+<p><code>opengit-relay --help</code> states the license boundary inline. The relay's authority surface is <em>its operator's</em> choice of pubkey-pinning + which content-keyed repos it serves — there is no implicit trust.</p>
+<h2>Owner-offline availability for your own repo (the Stage 5.2 path)</h2>
+<p>Goal: your repo stays cloneable while your laptop is closed. You operate (or trust) a blind-peer server; ask it to <strong>pin</strong> your repo's cores.</p>
+<p><strong>0. Wiring preflight (catches config bugs before you touch real infra):</strong></p>
+<pre data-lang="bash"><code>node scripts/preflight-relay.js          # expect: PREFLIGHT PASSED — 12/12</code></pre>
+<p>This verifies <code>setBlindPeerMirrors</code> validation, the no-mirrors guard, client construction, that <code>requestBlindPin</code> selects exactly the 5 repo cores, the AGPL-path guards, and the <code>--use-hiverelay</code> license boundary. It does <strong>not</strong> prove a real pin round-trip — single-node fixtures can't holepunch the blind-peer muxer (documented skip). The authoritative proof is the real-relay run below.</p>
+<p><strong>1. Run / identify your blind-peer server and get its pubkey:</strong></p>
+<pre data-lang="bash"><code>npx blind-peer-cli            # prints its public key → BP_PUBKEY</code></pre>
+<blockquote><p>The foundation relay descriptors in <code>lib/known-relays.js</code> (<code>relay-us</code>/<code>relay-sg.p2phiverelay.xyz</code>) are <strong>HTTPS/WSS endpoints and carry no blind-peer pubkey</strong>. <code>setBlindPeerMirrors()</code> needs a <em>pubkey</em>, which you supply as the operator. The preflight calls this out explicitly.</p></blockquote>
+<p><strong>2. Serve the repo and ask the relay to pin it:</strong></p>
+<pre data-lang="bash"><code>opengit serve myrepo --mirror &lt;BP_PUBKEY&gt;
+#  → serving opengit://&lt;key&gt; (public)
+#  → blind-pin requested from 1 mirror(s): pinned 5 cores
+#  leave it ~30–60s for the pin to settle</code></pre>
+<p><strong>3. Go offline</strong> (Ctrl-C the serve / close the laptop).</p>
+<p><strong>4. From a fresh machine/profile, owner offline — clone must still work:</strong></p>
+<pre data-lang="bash"><code>OPENGIT_PROFILE=fresh git clone opengit://&lt;key&gt; offline-clone
+#  (if the relay isn't on the public DHT path, both sides:
+#   export OPENGIT_BOOTSTRAP=&quot;&lt;relay-host:port&gt;&quot;)</code></pre>
+<p>✅ Success = the clone works with the owner offline, byte-correct. Reproduce <strong>twice</strong> before relying on it. Full procedure + private-repo cold-bootstrap variant: <a href="../TESTING.md">../TESTING.md</a> §Stage 5.2.</p>
+<h2>Trust model (pin relay identities)</h2>
+<p>You decide which operator pubkeys you trust — out-of-band, explicitly:</p>
+<pre data-lang="bash"><code>opengit pin-relay https://relay.example pubkeyhex --note &quot;my relay&quot;
+opengit list-pins
+opengit unpin-relay https://relay.example</code></pre>
+<p>No relay is trusted implicitly. A relay cannot forge content (cores are content-addressed / signed); the worst a malicious relay can do is withhold data — which is why you can run/point at several.</p>
+<h2>Indexer (optional discovery)</h2>
+<p><code>opengit-indexer</code> subscribes to a list of <strong>public</strong> repos, ingests their meta + issues, and exposes a Hyperbee-backed search RPC over Hyperswarm. Clients query N indexers in parallel. It is strictly opt-in and only ever touches public content. See <a href="../packages/opengit-indexer"><code>packages/opengit-indexer</code></a>.</p>
+<h2>Operator principles</h2>
+<ul><li><strong>No telemetry, no phone-home.</strong> Don't add any.</li><li><strong>Plaintext only where it's already public.</strong> Private repos: ciphertext only, ever.</li><li><strong>Explicit trust.</strong> Pubkey-pin; document which keys you serve.</li><li><strong>Self-hosting is the obvious-correct default.</strong> The foundation relays are a convenience, not an authority — <code>known-relays.js</code> documents this and pushes self-hosting.</li></ul>
+<p>Background: <a href="../HIVERELAY-INTEGRATION.md">../HIVERELAY-INTEGRATION.md</a> (verified upstream snapshot + integration design), <a href="history/DECENTRALIZATION-AUDIT.md">history/DECENTRALIZATION-AUDIT.md</a>.</p>
+</article>
+<footer>
+  <div class="wrap">
+    <p>
+      Apache-2.0 by default · No telemetry · No phone-home ·
+      <a href="https://github.com/bigdestiny2/opengit">source</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

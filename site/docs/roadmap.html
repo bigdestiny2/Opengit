@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roadmap — Opengit</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="doc-nav">
+  <div class="wrap nav-row">
+    <a href="/" class="home-link">⌬ Opengit</a>
+    <a href="/docs/quickstart.html">Quickstart</a>
+    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="active">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+  </div>
+</nav>
+<article class="doc-page wrap">
+<h1>Opengit Roadmap</h1>
+<p>Forward-looking work. The historical campaign that delivered the live milestone is archived at <a href="history/LIVE-TEST-PLAN.md">docs/history/LIVE-TEST-PLAN.md</a>; the proof is <a href="../STAGE-4-LIVE-RESULT.md">../STAGE-4-LIVE-RESULT.md</a>. This page tracks what's next.</p>
+<hr>
+<h2>✅ Done (proven)</h2>
+<ul><li><strong>Stages 1–4 — LIVE PASSED (2026-05-18).</strong> Signed issue + signed PR across two physical machines over the real Hyperswarm DHT; owner closed + merged. Opengit's own repo as payload. <em>Definition of Done met.</em></li><li><strong>Stage 5.1 — contributor code push (fork→fetch→merge)</strong> dry-run-proven with the real repo (11/11). No multi-writer, no GitHub.</li><li><strong>Stage 5.2 — relay wiring</strong> preflight 12/12; <code>opengit serve --mirror</code> enabler shipped.</li><li>Cross-party issues/PRs (<code>opengit collab</code>), private-repo cold-bootstrap, identity (mnemonic-rooted), the 8 pre-flight bug fixes.</li></ul>
+<h2>▶ Next: Stage 5 — self-host (drop GitHub)</h2>
+<p>GitHub (<code>bigdestiny2/Opengit</code>) is currently the <strong>bootstrap channel only</strong> — the known-good path used to validate the new one. The endgame is Opengit hosting its own code + collaboration + build. Cut over only when the Opengit path clears the <strong>same bar</strong> GitHub does (dry-run-proven, then live-proven).</p>
+<h3>5.2 — owner-offline availability (real relay run)</h3>
+<p><em>Status: wiring proven; the real-relay run is operator-side and yours.</em> Run <a href="../TESTING.md">../TESTING.md</a> §Stage 5.2: a blind-peer/HiveRelay you operate pins the canonical repo; owner goes offline; a fresh clone still succeeds. Reproduce <strong>twice</strong>.</p>
+<h3>5.3 — mirror cutover</h3>
+<p>Publish canonical to <code>opengit://</code>; GitHub becomes a frozen, read-only mirror. Run one full real work cycle (issue → contributor branch push → PR → review → owner merge) <strong>entirely on Opengit</strong>, both devs.</p>
+<h3>5.4 — GitHub-free</h3>
+<p>After N green Opengit-only cycles, stop pushing to GitHub. Opengit is the source of truth. Ship <code>opengit daemon</code> for one-shot ergonomics (see below).</p>
+<p><strong>Self-host Definition of Done:</strong> a full feature (issue → contributor branch push → PR → review → owner merge) completed with <strong>GitHub disconnected</strong>, the repo available across an owner-offline window, reproduced twice.</p>
+<h2>Known follow-ups (tracked, not blocking)</h2>
+<ul><li><strong><code>opengit daemon</code>.</strong> One-shot <code>opengit issue</code>/<code>pr</code> are local-only because a forge mutation needs an online presence and Corestore is single-process per storage dir. A long-running daemon that owns the Corestore and serves one-shot CLI clients (+ git + relay) is the path to GitHub-like one-shot ergonomics. Until then, cross-party forge ops go through <code>opengit collab</code>.</li><li><strong>Multi-writer refs.</strong> Still the pre-fix isolated-Autobase shape. Not on any proven path (git data uses single-writer manifest refs; collaboration uses fork→PR). Apply the proven manifest+admit pattern if/when shared-branch push is wanted.</li><li><strong>Private-repo issue-core encryption.</strong> Issues/PR Autobase content for private repos is a separate hardening item.</li><li><strong>Stages 2/3 (cross-NAT / HiveRelay owner-offline)</strong> not yet exercised live; expected to be NAT-dependent — jump to relay, don't debug NAT live.</li><li><strong>Standalone <code>git clone opengit://</code> over the real DHT</strong> — a separate tick from the forge-loop proof; do it while a peer is online (see <a href="../STAGE-4-LIVE-RESULT.md">../STAGE-4-LIVE-RESULT.md</a> open ticks).</li><li><strong>Release engineering.</strong> Package version is still <code>0.0.1</code>; versioning, changelog, and <code>pear://</code> distribution are open.</li></ul>
+<h2>Operating principle</h2>
+<p>One unproven variable at a time. Every risky path gets a solo in-harness dry-run that asserts a concrete outcome <em>before</em> it runs live. That discipline caught 8 real bugs before the milestone and is non-negotiable for 5.2–5.4.</p>
+</article>
+<footer>
+  <div class="wrap">
+    <p>
+      Apache-2.0 by default · No telemetry · No phone-home ·
+      <a href="https://github.com/bigdestiny2/opengit">source</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

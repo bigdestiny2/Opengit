@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Developer Guide — Opengit</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="doc-nav">
+  <div class="wrap nav-row">
+    <a href="/" class="home-link">⌬ Opengit</a>
+    <a href="/docs/quickstart.html">Quickstart</a>
+    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="active">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+  </div>
+</nav>
+<article class="doc-page wrap">
+<h1>Opengit Developer Guide</h1>
+<p>For people building <strong>on</strong> <code>opengit-core</code> or hacking <strong>on</strong> Opengit itself. Read <a href="ARCHITECTURE.md">ARCHITECTURE.md</a> first for the mental model.</p>
+<hr>
+<h2>Repo layout</h2>
+<pre><code>packages/
+  opengit-core/        library (the important one)
+    lib/               repo.js, forge.js, shadow.js, blind.js, issues.js,
+                       prs.js, identity*.js, profile.js, repo-index.js,
+                       constants.js, known-relays.js, …
+    test/              node:test suites (unit + test/integration/*)
+    index.js           public exports
+  git-remote-opengit/  bin/git-remote-opengit.js  (the git helper)
+  opengit-cli/         bin/opengit.js             (the `opengit` command)
+  opengit-relay/  opengit-mirror/  opengit-indexer/  opengit-pages/
+scripts/               dry-run-collab.js, dry-run-fork-push.js,
+                       live-collab.js, preflight-relay.js, build-site.js
+test-helpers/          swarm-fixture.js (local single-node DHT)
+SPEC.md  TESTING.md  STAGE-4-LIVE-RESULT.md  docs/  docs/history/</code></pre>
+<h2>Setup</h2>
+<pre data-lang="bash"><code>npm install            # workspace install; pulls Holepunch deps
+node -v                # ≥ 20 (tested 22)
+git --version          # ≥ 2.30</code></pre>
+<h2>Tests</h2>
+<p>The canonical suite (per-package <code>test/*.test.js</code> + <code>test/integration/*</code>):</p>
+<pre data-lang="bash"><code>npm test
+# expect:  # tests 123   # pass 119   # fail 0   # skipped 4</code></pre>
+<p>The 4 skips are <strong>deliberate, documented</strong> harness-boundary cases (subprocess git-clone over the single-node fixture DHT; in-process blind-peer holepunch; 2 superseded indexer tests). They are validated by the live test / real relay, not the fixture — do not &quot;fix&quot; them by forcing the fixture.</p>
+<p>Run one suite:</p>
+<pre data-lang="bash"><code>node --import ./test/setup.js --test --test-timeout=45000 \
+  packages/opengit-core/test/repo.test.js</code></pre>
+<h3>In-harness rehearsals (the &quot;prove before you ship&quot; gates)</h3>
+<p>These run the <em>real</em> code paths over a local <code>SwarmFixture</code> with Opengit's own repo as payload. They each print a clear verdict and exit 0/non-zero:</p>
+<pre data-lang="bash"><code>node scripts/dry-run-collab.js     # full Stage-4 forge loop          → 9/9
+node scripts/dry-run-fork-push.js  # fork→fetch→merge contributor push → 11/11
+node scripts/preflight-relay.js    # relay/blind-peer wiring          → 12/12</code></pre>
+<p>Two real OS processes can rendezvous over a <code>SwarmFixture</code> (confirmed); the git-helper <em>subprocess</em> over the synthetic single-node DHT cannot — that gap is exactly what the live two-machine test (TESTING.md) covers.</p>
+<blockquote><p><strong>Discipline that delivered the milestone:</strong> every risky path is proven solo in-harness <em>before</em> it's run live. Stage 0 prep this way caught and fixed <strong>8 real bugs</strong> that would each have killed the live session. If you add an unproven path, add a dry-run for it. One unproven variable at a time.</p></blockquote>
+<h2><code>opengit-core</code> public API (the essentials)</h2>
+<p><code>require('opengit-core')</code> exports: <code>OpengitRepo</code>, <code>OpengitForge</code>, <code>OpengitIdentity</code>, <code>Keyring</code>, <code>Petnames</code>, <code>IdentityStore</code>, <code>PinnedRelays</code>, <code>ShadowRepo</code>, <code>gitAvailable</code>, <code>dbg</code>, <code>knownRelays</code>, <code>profile</code>, <code>topic</code>, <code>wrappedKey</code>, <code>multiRefs</code>, <code>constants</code>.</p>
+<h3>Forge</h3>
+<pre data-lang="js"><code>const { OpengitForge, OpengitIdentity, IdentityStore } = require('opengit-core')
+
+const forge = new OpengitForge({
+  storage,            // Corestore dir
+  profileName,        // profile (RepoIndex/keyring/shadow derive from $OPENGIT_HOME + this)
+  bootstrap,          // [{host,port}] or undefined → public DHT
+  identity            // OpengitIdentity (use IdentityStore.loadOrCreate() for a stable one)
+})
+await forge.ready()
+
+const repo  = await forge.createRepo('name', { visibility: 'public'|'private', multiwriter })
+const repo2 = await forge.openRepo(repoKeyHexOrZ32)          // remote: read-only until refresh
+await forge.joinRepoTopic(repo, { server: true, client: true })
+await forge.close()</code></pre>
+<blockquote><p><strong>Gotcha (real bug we hit):</strong> <code>RepoIndex</code>/profile paths resolve from the <strong>global</strong> <code>process.env.OPENGIT_HOME</code>, <em>not</em> per-forge. If you run two actors (two homes) in one process, set <code>OPENGIT_HOME</code> to the right home <strong>before each forge's first repo op</strong> (the RepoIndex is lazily cached and then pinned for that forge's lifetime).</p></blockquote>
+<h3>Repo</h3>
+<pre data-lang="js"><code>await repo.refresh()                       // re-read manifest, (re)bind cores — REQUIRED after swarm settles on a remote
+repo.keyHex / repo.keyZ32 / repo.key       // the manifest key = the address
+repo.isLocalWritable                       // authoritative &quot;I own this&quot; (not repo.writable)
+await repo.listRefs()  / repo.getRef(name) / repo.setRef(name, oid)
+for await (const p of repo.listPacks()) {} / repo.getPack(id) / repo.putPack(id, bytes, [])
+await repo.getMeta()
+// private:
+repo.isPrivate / repo.contentKey / repo.setContentKey(buf)
+await repo.addInvite(pubkey, { label })
+
+// collaboration:
+await repo.openIssue({ title, body })            // signed by repo.identity
+await repo.closeIssue({ issueId, reason })
+await repo.openPR({ title, body, fromRepo, fromRef, toRef })
+await repo.mergePR({ prId, mergeOid, strategy })
+await repo.listIssues({ state }) / repo.listPRs({ state }) / repo.getIssue(id) / repo.getPR(id)
+const keys = await repo.collabKeys()             // contributor → blob
+await repo.admitCollaborator(keys)               // owner admits
+await repo.syncCollab({ timeoutMs })             // contributor waits until writable</code></pre>
+<h3>Shadow</h3>
+<pre data-lang="js"><code>const { ShadowRepo } = require('opengit-core')
+const s = new ShadowRepo({ repoKeyHex, profileName, root })  // root optional (default under profile)
+await s.pullFromRepo(repo)   // Corestore → bare .git ; then `git --git-dir &lt;s.path&gt; …`
+await s.pushToRepo(repo)     // bare .git → Corestore (repacks loose objects)</code></pre>
+<h2>The git remote-helper protocol (<code>git-remote-opengit</code>)</h2>
+<p><code>git</code> invokes <code>git-remote-opengit &lt;remote&gt; &lt;opengit://key&gt;</code> and speaks the remote-helper protocol on stdio: <code>capabilities</code> → advertise <code>connect</code>; <code>connect git-upload-pack</code> / <code>connect git-receive-pack</code> → the helper opens the forge, replicates, <code>repo.refresh()</code>s, materializes the <code>ShadowRepo</code>, and <code>spawn</code>s the real <code>git upload-pack</code>/<code>receive-pack</code> against <code>--git-dir &lt;shadow&gt;</code>, proxying bytes. It distinguishes <strong>exit 3 = no peers</strong> from <strong>exit 0 = empty repo</strong>. It must be on <code>PATH</code> named exactly <code>git-remote-opengit</code>. <code>OPENGIT_DEBUG=1</code> writes a debug log under the profile dir (git swallows helper stderr, so the file sink is the only window).</p>
+<h2>Testing your changes — the checklist</h2>
+<ol><li><code>npm test</code> green (119/0/4; the 4 skips unchanged).</li><li>If you touched the git data path: <code>node scripts/dry-run-collab.js</code> 9/9.</li><li>If you touched contributor push / refs: <code>node scripts/dry-run-fork-push.js</code> 11/11.</li><li>If you touched blind-peer/relay wiring: <code>node scripts/preflight-relay.js</code> 12/12.</li><li>New unproven path? Add a dry-run that exercises the <em>real</em> code over <code>SwarmFixture</code> and asserts a concrete outcome. Bound every wait so it always returns a verdict.</li><li>No leaked processes/PTYs: scripts must close forges + teardown fixtures in <code>finally</code>; long-lived roles (<code>serve</code>, <code>collab maintainer</code>) are intentional.</li></ol>
+<h2>Conventions</h2>
+<ul><li>Node core <code>node:test</code> + <code>node:assert/strict</code>. No test framework.</li><li><code>b4a</code> for buffers, <code>z32</code> for key display, hex internally.</li><li>Errors are actionable strings (e.g. the no-mirrors / not-owner messages) — keep that bar; users read them.</li><li>Don't reimplement git — drive the binary via the shadow.</li><li>Respect the decentralization invariants in <a href="ARCHITECTURE.md">ARCHITECTURE.md</a> — no telemetry, no registry, no implicit trust, Apache-2.0 unless the explicit AGPL opt-in.</li></ul>
+<h2>Contributing changes back</h2>
+<p>Opengit dogfoods its own forge — see <a href="../CONTRIBUTING.md">CONTRIBUTING.md</a> for the <code>opengit://</code> fork→PR workflow (GitHub is currently the bootstrap mirror; the self-host cutover is the <a href="ROADMAP.md">ROADMAP</a>).</p>
+</article>
+<footer>
+  <div class="wrap">
+    <p>
+      Apache-2.0 by default · No telemetry · No phone-home ·
+      <a href="https://github.com/bigdestiny2/opengit">source</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

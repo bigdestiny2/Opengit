@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Result (milestone) — Opengit</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="doc-nav">
+  <div class="wrap nav-row">
+    <a href="/" class="home-link">⌬ Opengit</a>
+    <a href="/docs/quickstart.html">Quickstart</a>
+    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="active">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+  </div>
+</nav>
+<article class="doc-page wrap">
+<h1>Stage 4 — LIVE RESULT: Opengit's first real two-machine collaboration</h1>
+<p><strong>Date:</strong> 2026-05-18 <strong>Outcome:</strong> ✅ <strong>PASSED.</strong> A signed issue and a signed PR, opened by a second person on a second physical machine, replicated over the real Hyperswarm DHT to the repo owner, who closed and merged them. The milestone Opengit had never reached — reached.</p>
+<p>This is the Definition of Done from <code>docs/history/LIVE-TEST-PLAN.md</code>:</p>
+<blockquote><p>A change Ian makes on his machine lands in your repo on yours — over the real network, through <code>git</code>, with at least one signed issue and one merged PR. That's Opengit proving it is a forge.</p></blockquote>
+<hr>
+<h2>Participants &amp; setup</h2>
+<table><thead><tr><th>Role</th><th>Who</th><th>Machine</th><th>Profile</th></tr></thead><tbody><tr><td>Maintainer / owner</td><td>repo owner</td><td><code>Locals-Mac-Studio</code></td><td><code>default</code> (<code>~/.opengit</code>)</td></tr><tr><td>Contributor</td><td>Ian (<code>iainkek</code>)</td><td>separate machine</td><td>own profile</td></tr></tbody></table>
+<ul><li>Transport: <strong>real Hyperswarm DHT</strong> (no <code>OPENGIT_BOOTSTRAP</code> override needed).</li><li>Repo: Opengit's own source tree (dogfood).</li><li><code>REPO_KEY</code> = <code>nibsqgk71owjouyyeeoyfd6yt7f9jcj88tq55ozwe76t4ctiifby</code></li><li>Driver: <code>scripts/live-collab.js maintainer</code> (owner) / contributor role on Ian's side. Equivalent CLI: <code>opengit collab maintainer|contributor</code>.</li><li>Admission handshake: Ian's <code>CONTRIB_BLOB</code> <code>{&quot;issues&quot;:&quot;d286498f…f956&quot;,&quot;prs&quot;:&quot;12bb22ac…e220&quot;}</code> placed in <code>/Users/localllm/Opengit/live-admit.txt</code> on the owner machine.</li></ul>
+<h2>Primary evidence — owner maintainer terminal</h2>
+<pre><code>[08:39:56] maintainer online as profile &quot;default&quot;
+[08:39:56] REPO_KEY=nibsqgk71owjouyyeeoyfd6yt7f9jcj88tq55ozwe76t4ctiifby
+[08:39:56] waiting for the contributor blob in: /Users/localllm/Opengit/live-admit.txt
+[08:55:39] ADMITTED contributor (issues=d286498f6a3f… prs=12bb22ac727b…)
+[08:55:45] CLOSED contributor issue 7x7xzg8fk0q7 — &quot;live-test issue from contributor 2026-05-18T08:55:41.062Z&quot;
+[08:55:45] MERGED contributor PR pr-hr1xbgi280 — &quot;live-test PR from contributor 2026-05-18T08:55:41.062Z&quot;</code></pre>
+<p>What each line proves, end-to-end across two physical machines on the real DHT:</p>
+<ol><li><strong><code>ADMITTED contributor</code></strong> — the v0.0.12 <code>collabKeys</code> → <code>admitCollaborator</code> → <code>syncCollab</code> handshake completed. The owner granted Ian's issues/PR Autobase input cores write authority; the signed <code>writer.add</code> linearized.</li><li><strong><code>CLOSED contributor issue 7x7xzg8fk0q7</code></strong> — Ian opened a <strong>signed</strong> issue on his machine; it replicated owner-ward; the owner closed it.</li><li><strong><code>MERGED contributor PR pr-hr1xbgi280</code></strong> — Ian opened a <strong>signed</strong> PR; it replicated; the owner merged it.</li></ol>
+<p>The whole forge loop ran in ~6 s once admitted. The ~16-min gap between <code>online</code> and <code>ADMITTED</code> is the out-of-band human blob exchange, not protocol.</p>
+<h2>Contributor-side seal — CONFIRMED ✅ (Ian's terminal, 2026-05-18)</h2>
+<p>Ian's contributor process printed the banner and <strong>exited 0</strong>. IDs and timing match the owner log exactly — a fully sealed bidirectional round trip across two physical machines on the real Hyperswarm DHT:</p>
+<pre><code>[08:46:28] contributor online as profile &quot;default&quot;, replicating nibsqgk71owjouyy…
+[08:46:29] manifest replicated (issues/PR autobase keys present)
+[08:46:29] CONTRIB_BLOB=eyJpc3N1ZXMiOiJkMjg2…  (issues=d286498f… prs=12bb22ac…)
+[08:46:29] waiting for the maintainer to admit you (syncCollab)…
+[08:55:41] admitted: issues=true prs=true
+[08:55:41] opened signed issue 7x7xzg8fk0q7 + PR pr-hr1xbgi280 — waiting for maintainer to close + merge…
+[08:55:47] ✓ FULL BIDIRECTIONAL FORGE LOOP CONFIRMED ON THE REAL NETWORK
+[08:55:47]   issue 7x7xzg8fk0q7 → CLOSED by maintainer
+[08:55:47]   PR    pr-hr1xbgi280 → MERGED by maintainer
+[08:55:47] Opengit is a forge. 🎉</code></pre>
+<p>Cross-check — both terminals agree to the second:</p>
+<table><thead><tr><th>Event</th><th>Owner (<code>Locals-Mac-Studio</code>)</th><th>Contributor (Ian)</th></tr></thead><tbody><tr><td>handshake</td><td><code>08:55:39 ADMITTED contributor</code></td><td><code>08:55:41 admitted: issues=true prs=true</code></td></tr><tr><td>signed issue+PR</td><td><code>08:55:45 CLOSED 7x7xzg8fk0q7</code> / <code>MERGED pr-hr1xbgi280</code></td><td><code>08:55:41 opened 7x7xzg8fk0q7 + pr-hr1xbgi280</code></td></tr><tr><td>round-trip back</td><td>—</td><td><code>08:55:47</code> observed CLOSE+MERGE → banner → <strong>exit 0</strong></td></tr></tbody></table>
+<p>Identical issue/PR IDs on both machines; the blob Ian generated (<code>issues=d286498f… prs=12bb22ac…</code>) is exactly the one the owner admitted; ~2 s per replication hop. The contributor's signed entries were moderated by the owner <strong>and</strong> the owner's close+merge replicated back to the contributor. Both directions, two machines, real network. <strong>Stage 4 fully sealed.</strong></p>
+<h2>Honest scope / still-open ticks</h2>
+<ul><li><strong>Stage 1 (standalone <code>git clone opengit://</code> over the real DHT)</strong> is a <em>separate</em> tick from this forge-loop proof. Recommended while both are online: <code>git clone opengit://nibsqgk71owjouyyeeoyfd6yt7f9jcj88tq55ozwe76t4ctiifby dest</code>. (If it hangs it's NAT → Stage 3 relay, not a logic bug.)</li><li>Stages 2/3 (cross-NAT, HiveRelay owner-offline) untested by this run.</li><li>Multi-writer <em>refs</em> Autobase still uses the old isolated shape (not on any live path; git data uses single-writer manifest refs). Private-repo issue-core encryption is a separate follow-up.</li></ul>
+<h2>Why the live run was &quot;confirm,&quot; not &quot;discover&quot;</h2>
+<p>Stage 0 solo pre-flight caught and fixed <strong>8 real bugs</strong> before Ian was involved (6 in the git-data path, the Autobase <code>local</code>-core collision, and the cross-party silo / empty-moderator-set bug) — see <code>docs/history/LIVE-TEST-PLAN.md</code> §Status. The in-harness <code>scripts/dry-run-collab.js</code> was green <strong>9/9</strong> with the real repo as payload, and the loop was E2E-proven across two OS processes (script and CLI) before this session. Discipline paid: the live run reproduced the rehearsal exactly.</p>
+<h2>Reproduce</h2>
+<ul><li>In-harness, one machine: <code>node scripts/dry-run-collab.js</code> → <code>DRY-RUN PASSED — 9/9</code>.</li><li>Two machines: follow <code>TESTING.md</code> (<code>opengit collab maintainer</code> / <code>opengit collab contributor</code>, blob via <code>live-admit.txt</code> or <code>opengit collab admit</code>).</li></ul>
+</article>
+<footer>
+  <div class="wrap">
+    <p>
+      Apache-2.0 by default · No telemetry · No phone-home ·
+      <a href="https://github.com/bigdestiny2/opengit">source</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

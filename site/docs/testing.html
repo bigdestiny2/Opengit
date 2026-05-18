@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two-Machine Test Runbook — Opengit</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="doc-nav">
+  <div class="wrap nav-row">
+    <a href="/" class="home-link">⌬ Opengit</a>
+    <a href="/docs/quickstart.html">Quickstart</a>
+    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="active">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+  </div>
+</nav>
+<article class="doc-page wrap">
+<h1>Opengit — Live Two-Machine Test Runbook</h1>
+<p>You (<strong>maintainer</strong>, repo owner) + Ian / his agent (<strong>contributor</strong>, second machine). Goal: prove Opengit is a real forge across two real machines — <code>git clone opengit://</code> plus a signed issue and a merged PR crossing between you, over the real network.</p>
+<p>This runbook is <strong>agent-runnable</strong>: every step is a concrete command that prints a clear marker and exits 0 on success / non-zero on failure. Companion design doc: <code>docs/history/LIVE-TEST-PLAN.md</code> (stages + failure playbook). In-harness rehearsal that this mirrors: <code>scripts/dry-run-collab.js</code> (proven 9/9).</p>
+<blockquote><p>Cardinal rule: <strong>add exactly one unproven variable per stage.</strong> If a stage is red, fix it before the next — a stacked failure tells you nothing.</p></blockquote>
+<hr>
+<h2>0. Both machines — setup + solo self-check (do this first, independently)</h2>
+<p>Requirements: <strong>Node ≥ 22</strong>, <strong>git ≥ 2.30</strong>.</p>
+<pre data-lang="bash"><code>git clone https://github.com/bigdestiny2/Opengit.git    # Ian: accept the repo invite first
+cd Opengit
+npm install
+
+# Put BOTH binaries on PATH: the git helper (named exactly
+# git-remote-opengit) and the `opengit` CLI.
+mkdir -p ~/.local/bin
+ln -sf &quot;$PWD/packages/git-remote-opengit/bin/git-remote-opengit.js&quot; ~/.local/bin/git-remote-opengit
+ln -sf &quot;$PWD/packages/opengit-cli/bin/opengit.js&quot;                    ~/.local/bin/opengit
+chmod +x packages/git-remote-opengit/bin/git-remote-opengit.js packages/opengit-cli/bin/opengit.js
+export PATH=&quot;$HOME/.local/bin:$PATH&quot;          # add to your shell rc too
+
+# Identity for this profile (creates + persists one if absent):
+opengit identity init || true</code></pre>
+<p>Self-check — confirm your machine reproduces the full flow <strong>in-harness</strong> before going live (this is the single best pre-flight; it caught 8 real bugs):</p>
+<pre data-lang="bash"><code>npm test                       # expect:  # pass 119   # fail 0   # skipped 4
+node scripts/dry-run-collab.js # expect:  DRY-RUN PASSED — 9/9 steps.</code></pre>
+<p>If either is not green on a machine, <strong>stop and fix that machine</strong> — the live test cannot succeed if the solo dry-run is red there.</p>
+<hr>
+<h2>Stage 1 — first real <code>git clone opengit://</code> across two machines</h2>
+<p>The never-before-reached milestone. Pure git data path; no forge loop yet.</p>
+<p><strong>You (maintainer)</strong> — start the persistent node and note the key it prints:</p>
+<pre data-lang="bash"><code>opengit collab maintainer --name opengit
+#   → REPO_KEY=&lt;52-char z32&gt;      ← copy this; send it to Ian
+#   (stays online; leave this terminal running for ALL stages)</code></pre>
+<p><strong>Ian (contributor)</strong> — clone it through the real helper:</p>
+<pre data-lang="bash"><code>export PATH=&quot;$HOME/.local/bin:$PATH&quot;
+git clone opengit://&lt;REPO_KEY&gt; opengit-clone
+cd opengit-clone &amp;&amp; git log --oneline -1 &amp;&amp; ls SPEC.md packages/opengit-core/lib/repo.js</code></pre>
+<p>✅ <strong>Stage 1 passes</strong> when Ian has a byte-correct working tree (the repo clones, <code>SPEC.md</code> + sources are present, <code>git log</code> shows the commit). <em>This alone is Opengit proving its core protocol on the real network for the first time.</em></p>
+<p>If <code>git clone</code> hangs: it is <strong>NAT</strong>, not a logic bug (the data path is proven in-harness). Go to Stage 2/3 — do <strong>not</strong> debug NAT live.</p>
+<hr>
+<h2>Stage 2 / 3 — cross-NAT, then HiveRelay (only if Stage 1 needs it)</h2>
+<ul><li>Same-LAN or one side reachable first (isolates protocol from NAT).</li><li>Cross-NAT: if holepunch fails for your NAT pair, that is expected — jump to Stage 3.</li><li>Stage 3 (Ian's turf): point both sides at a HiveRelay bootstrap and/or use the foundation relays for owner-offline availability: <code></code><code>bash export OPENGIT_BOOTSTRAP=&quot;relay-host:port[,relay-host:port]&quot;   # both machines, all stages </code><code></code> Re-run Stage 1 with that set. See <code>docs/history/LIVE-TEST-PLAN.md</code> §Stage 3 + failure table.</li></ul>
+<hr>
+<h2>Stage 4 — the full forge loop (signed issue + merged PR, both ways)</h2>
+<p>The Definition of Done. Keep your Stage-1 maintainer node <strong>running</strong>.</p>
+<p><strong>1. Ian (contributor)</strong> — start the contributor role:</p>
+<pre data-lang="bash"><code>export PATH=&quot;$HOME/.local/bin:$PATH&quot;
+opengit collab contributor --repo &lt;REPO_KEY&gt;
+#   → prints  CONTRIB_BLOB=&lt;base64&gt;     ← Ian sends this string to you
+#   (then it waits to be admitted; leave it running)</code></pre>
+<p>The blob is <strong>not secret</strong> — it is two Autobase input-core <em>public</em> keys. Admitting a collaborator is a deliberate act (like “add collaborator” on GitHub).</p>
+<p><strong>2. You (maintainer)</strong> — admit Ian. Either drop his blob into the watch file in the <strong>same working directory</strong> the maintainer runs from:</p>
+<pre data-lang="bash"><code>echo 'PASTE_THE_CONTRIB_BLOB_HERE' &gt; live-admit.txt</code></pre>
+<p>…or, if you'd rather not use the file, run the one-shot from any terminal on the <strong>owner</strong> machine/profile (it joins, admits, replicates, exits):</p>
+<pre data-lang="bash"><code>opengit collab admit opengit 'PASTE_THE_CONTRIB_BLOB_HERE' --wait 30
+#   (&quot;opengit&quot; = the repo's local petname/--name; or pass the 52-char REPO_KEY)</code></pre>
+<p><strong>3. Watch it complete (automatic from here):</strong></p>
+<ul><li>Maintainer terminal prints: <code>ADMITTED contributor …</code>, then later <code>CLOSED contributor issue …</code> and <code>MERGED contributor PR …</code>.</li><li>Contributor terminal opens a signed issue + PR, observes your close + merge, prints the banner, and <strong>exits 0</strong>:</li></ul>
+<pre><code>✓ FULL BIDIRECTIONAL FORGE LOOP CONFIRMED ON THE REAL NETWORK
+  issue … → CLOSED by maintainer
+  PR    … → MERGED by maintainer
+Opengit is a forge. 🎉</code></pre>
+<p>✅ <strong>Stage 4 passes</strong> when Ian's process exits 0 with that banner. That is a signed issue and a merged PR crossing two real machines over the P2P network — <strong>Opengit proving it is a forge.</strong></p>
+<p>Optional (private-repo cold-bootstrap, <code>docs/history/LIVE-TEST-PLAN.md</code> §Stage 4): repeat with <code>opengit init --private</code>; you <code>opengit invite &lt;repo&gt; &lt;Ian-identity-pub&gt;</code>; Ian <code>opengit accept-invite &lt;repo&gt;</code> then re-runs the contributor role.</p>
+<hr>
+<h2>Stage 5.2 — owner-offline availability via YOUR relay (self-host)</h2>
+<p>The dogfood blocker after 5.1: the repo must stay cloneable <strong>while your laptop is closed</strong> — that's what makes GitHub-free async collaboration real. You operate the relay, so this is yours to run end-to-end. (In-harness can't prove this — single-node fixtures can't holepunch the blind-peer muxer; it's a documented skip. The authoritative proof is this real-relay run.)</p>
+<p><strong>0. Solo wiring preflight (before touching real infra — catches config bugs):</strong></p>
+<pre data-lang="bash"><code>node scripts/preflight-relay.js     # expect: PREFLIGHT PASSED — 12/12</code></pre>
+<p><strong>1. Run your blind-peer server (operator side — you).</strong> Either point at a HiveRelay you operate, or run the standalone pinning server:</p>
+<pre data-lang="bash"><code>npx blind-peer-cli            # prints its public key — copy it: BP_PUBKEY
+#   (or: opengit-relay --use-hiverelay  → AGPL-3.0 path, for the private variant)</code></pre>
+<p>The foundation relay descriptors in <code>known-relays.js</code> are HTTPS/WSS endpoints and do <strong>not</strong> carry a blind-peer pubkey — <code>setBlindPeerMirrors</code> needs the pubkey, which you supply as the operator (the preflight calls this out).</p>
+<p><strong>2. Owner: serve the repo AND ask your relay to pin it:</strong></p>
+<pre data-lang="bash"><code>opengit serve opengit --mirror &lt;BP_PUBKEY&gt;
+#   → serving opengit://&lt;KEY&gt; (public)
+#   → blind-pin requested from 1 mirror(s): pinned 5 cores
+#   Leave it long enough for the pin to settle (~30–60s), then…</code></pre>
+<p><strong>3. Owner goes OFFLINE</strong> — Ctrl-C that <code>serve</code>, close the laptop. The repo is now served by <strong>only</strong> your relay, no owner.</p>
+<p><strong>4. Fresh machine/profile (or Ian), owner offline — clone must still work:</strong></p>
+<pre data-lang="bash"><code>OPENGIT_PROFILE=fresh git clone opengit://&lt;KEY&gt; offline-clone
+cd offline-clone &amp;&amp; git log --oneline -1 &amp;&amp; ls SPEC.md
+#   (If your relay isn't on the public DHT path, both sides:
+#    export OPENGIT_BOOTSTRAP=&quot;&lt;your-relay-host:port&gt;&quot;)</code></pre>
+<p>✅ <strong>Stage 5.2 passes</strong> when the clone succeeds with the owner offline and the tree is byte-correct. That is owner-offline availability over your own relay — <strong>the last technical blocker to dropping GitHub.</strong> Reproduce <strong>twice</strong> (plan §Self-host Definition of done).</p>
+<p><strong>Private variant</strong> (cold-bootstrap, AGPL path): <code>opengit init --private foo</code>; <code>opengit blind-publish foo --source &lt;dir&gt;</code> (this is the <code>--use-hiverelay</code> AGPL-3.0 path); owner offline; a fresh peer with only its identity + the repo key recovers the content key over the relay and clones.</p>
+<p><strong>If it fails:</strong> preflight green but clone hangs offline → the pin didn't settle (wait longer at step 2) <strong>or</strong> <code>BP_PUBKEY</code> is wrong <strong>or</strong> the relay isn't reachable from the cloner (set <code>OPENGIT_BOOTSTRAP</code>). You operate the relay — check its logs directly.</p>
+<hr>
+<h2>Knobs / env (identical meaning on both machines)</h2>
+<table><thead><tr><th>Var</th><th>Default</th><th>Use</th></tr></thead><tbody><tr><td><code>OPENGIT_HOME</code></td><td><code>~/.opengit</code></td><td>profile + storage root</td></tr><tr><td><code>OPENGIT_PROFILE</code></td><td><code>default</code></td><td>profile name (separate identities/repos)</td></tr><tr><td><code>OPENGIT_BOOTSTRAP</code></td><td>public Holepunch DHT</td><td><code>host:port,…</code> override (Stage 3 / flaky DHT)</td></tr><tr><td><code>OPENGIT_DEBUG</code></td><td>unset</td><td>set to <code>1</code> for the git-helper file log under the profile dir</td></tr></tbody></table>
+<p>Restarting the maintainer with the same <code>--name</code> + <code>OPENGIT_HOME</code> re-opens the <strong>same</strong> <code>REPO_KEY</code> (stable across restarts).</p>
+<hr>
+<h2>If something goes wrong</h2>
+<ol><li>First: did <code>npm test</code> + <code>scripts/dry-run-collab.js</code> pass on <em>that</em> machine (Stage 0)? If not, the problem is local, not the protocol.</li><li><code>git clone</code> hangs → NAT. Set <code>OPENGIT_BOOTSTRAP</code> (Stage 3), don't debug live.</li><li>Contributor stuck &quot;waiting to be admitted&quot; → the blob never reached <code>live-admit.txt</code> in the maintainer's cwd, or <code>OPENGIT_BOOTSTRAP</code> differs between machines. Re-check both.</li><li>Owner laptop sleeps → expected; that's what Stage 3 (HiveRelay) is for.</li><li>Everything else → <code>docs/history/LIVE-TEST-PLAN.md</code> failure-playbook table.</li></ol>
+<h2>Definition of done</h2>
+<p>A change Ian makes on his machine lands in your repo on yours — over the real network, through <code>git</code>, with at least one signed issue and one merged PR. ✅</p>
+</article>
+<footer>
+  <div class="wrap">
+    <p>
+      Apache-2.0 by default · No telemetry · No phone-home ·
+      <a href="https://github.com/bigdestiny2/opengit">source</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

@@ -36,8 +36,8 @@ const banner = `
 
   Docs:
 
-    https://github.com/bigdestiny2/opengit
-    Read SPEC.md, IMPROVEMENT-RESEARCH.md.
+    https://github.com/bigdestiny2/Opengit
+    Start: README.md → docs/USER-GUIDE.md → docs/ARCHITECTURE.md (SPEC.md for depth).
 
   This shell makes only the network calls required to print this message
   (none). No telemetry, no phone-home.

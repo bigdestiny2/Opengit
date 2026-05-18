@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLI Reference — Opengit</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="doc-nav">
+  <div class="wrap nav-row">
+    <a href="/" class="home-link">⌬ Opengit</a>
+    <a href="/docs/quickstart.html">Quickstart</a>
+    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="active">CLI</a><a href="/docs/architecture.html" class="">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+  </div>
+</nav>
+<article class="doc-page wrap">
+<h1><code>opengit</code> CLI Reference</h1>
+<p>Every subcommand of the <code>opengit</code> binary (<code>packages/opengit-cli/bin/opengit.js</code>). Run <code>opengit help</code> for the in-terminal summary, or <code>opengit &lt;cmd&gt;</code> with no args to see that command's usage string.</p>
+<p><strong>Global flags / env</strong> (apply to all commands):</p>
+<ul><li><code>--profile &lt;name&gt;</code> — use a named profile (else <code>OPENGIT_PROFILE</code>, else <code>default</code>). Profiles never share identity/repos/keyring.</li><li><code>OPENGIT_HOME</code> (default <code>~/.opengit</code>), <code>OPENGIT_STORAGE</code>, <code>OPENGIT_BOOTSTRAP</code> (<code>host:port,…</code>), <code>OPENGIT_DEBUG=1</code>.</li></ul>
+<p>A <code>&lt;repo&gt;</code> argument accepts a 52-char z32 key, a 64-char hex key, or a local <strong>petname</strong>/local name.</p>
+<hr>
+<h2>Repositories</h2>
+<h3><code>opengit init &lt;name&gt; [--private] [--multi-writer]</code></h3>
+<p>Create a new repo you own. Prints <code>opengit://&lt;key&gt;</code> (+ hex), stores it under the active profile, and auto-adds a <code>repos/&lt;name&gt;</code> petname.</p>
+<ul><li><code>--private</code> — encrypted repo; a content key is generated and stored in your keyring. Share via <code>invite</code>/<code>accept-invite</code>.</li><li><code>--multi-writer</code> — refs governed by an Autobase (multi-collaborator push). <em>(Not on the proven live path; fork→PR is the recommended model.)</em></li></ul>
+<pre data-lang="bash"><code>opengit init myrepo
+opengit init secret --private</code></pre>
+<h3><code>opengit info &lt;repo&gt;</code></h3>
+<p>Show metadata (key, visibility, writable, spec, owners, …).</p>
+<h3><code>opengit serve &lt;repo&gt; [--mirror &lt;blind-peer-pubkey&gt; …]</code></h3>
+<p>Run a foreground swarm server for the repo (joins as server + client). Runs until Ctrl-C.</p>
+<ul><li><code>--mirror &lt;pubkey&gt;</code> (repeatable) — also ask that blind-peer server to <strong>pin</strong> this repo's cores (owner-offline availability). You supply the pubkey; <code>blind-peer-cli</code> prints it. See <a href="RELAY-OPERATORS.md">RELAY-OPERATORS.md</a>.</li></ul>
+<pre data-lang="bash"><code>opengit serve myrepo
+opengit serve myrepo --mirror 3f9a…c1</code></pre>
+<h3><code>opengit set-ref &lt;name&gt; &lt;ref&gt; &lt;oid&gt;</code></h3>
+<p>Low-level: set a ref on a writable repo (normally <code>git push</code> does this).</p>
+<h3><code>opengit list-refs &lt;repo&gt;</code></h3>
+<p>List refs (<code>refs/heads/*</code>, <code>refs/tags/*</code>, …) and their OIDs.</p>
+<h2>Identity</h2>
+<h3><code>opengit identity [show|init|recover|reset]</code></h3>
+<ul><li><code>init</code> — create a 24-word mnemonic-rooted identity (v0.0.9+). Use <code>--no-mnemonic</code> for a legacy raw keypair.</li><li><code>show</code> — print your current public key.</li><li><code>recover -- &lt;24 words&gt;</code> — rebuild the identity from its mnemonic.</li><li><code>reset</code> — drop the profile identity (destructive; needs the mnemonic to restore).</li></ul>
+<pre data-lang="bash"><code>opengit identity init
+opengit identity recover -- abandon ability … zoo</code></pre>
+<h2>Collaboration — <code>opengit collab …</code></h2>
+<p>The <strong>online</strong> cross-party forge loop (issues + PRs replicate between parties). Backed by the proven <code>collabKeys</code> → <code>admitCollaborator</code> → <code>syncCollab</code> API. Long-lived roles (<code>maintainer</code>/<code>contributor</code>) stay online; one-shots (<code>keys</code>/<code>admit</code>/<code>sync</code>) exit.</p>
+<h3><code>opengit collab maintainer [--name &lt;n&gt; | --repo &lt;key&gt;] [--admit-file &lt;path&gt;]</code></h3>
+<p>Owner role: create/open the repo, stay online, serve git <strong>and</strong> auto-moderate (close contributor issues, merge contributor PRs). Watches <code>--admit-file</code> (default <code>./live-admit.txt</code>) and admits any <code>CONTRIB_BLOB</code> dropped there. Prints <code>REPO_KEY=…</code>.</p>
+<h3><code>opengit collab contributor --repo &lt;REPO_KEY&gt;</code></h3>
+<p>Contributor role: replicate the repo, print your <code>CONTRIB_BLOB</code>, wait to be admitted, open a signed issue + PR, observe owner close/merge, exit 0 with the success banner.</p>
+<h3><code>opengit collab keys &lt;repo&gt;</code></h3>
+<p>One-shot: print your <code>CONTRIB_BLOB</code> (collab input-core public keys) and exit.</p>
+<h3><code>opengit collab admit &lt;repo&gt; &lt;CONTRIB_BLOB&gt; [--wait N]</code></h3>
+<p>One-shot (owner): admit a contributor, stay online <code>N</code>s (default 30) to replicate the signed <code>writer.add</code>, exit.</p>
+<h3><code>opengit collab sync &lt;repo&gt; [--wait N]</code></h3>
+<p>One-shot (contributor): wait until you've been admitted (default 120s), then exit.</p>
+<p>Full walkthrough: <a href="USER-GUIDE.md">USER-GUIDE.md</a> §4.</p>
+<h2>Issues (local replica)</h2>
+<blockquote><p>One-shot, <strong>local-only</strong> — they read/write <em>your</em> replica. To exchange with another party, use <code>opengit collab</code>.</p></blockquote>
+<h3><code>opengit issue &lt;list|open|comment|close|reopen|show&gt; …</code></h3>
+<pre data-lang="bash"><code>opengit issue open myrepo &quot;title&quot; --body &quot;…&quot;
+opengit issue list myrepo
+opengit issue show myrepo &lt;issueId&gt;
+opengit issue comment myrepo &lt;issueId&gt; &quot;a comment&quot;
+opengit issue close  myrepo &lt;issueId&gt; --reason &quot;fixed&quot;
+opengit issue reopen myrepo &lt;issueId&gt;</code></pre>
+<p>Comments/state changes are signed by your profile identity.</p>
+<h2>Pull requests (local replica)</h2>
+<h3><code>opengit pr &lt;list|open|comment|review|merge|close|reopen|update|show&gt; …</code></h3>
+<pre data-lang="bash"><code>opengit pr open myrepo &quot;title&quot; --from-repo &lt;forkKey&gt; \
+  [--from-ref refs/heads/feature] [--to-ref refs/heads/main] [--body &quot;…&quot;]
+opengit pr list  myrepo --state open|merged|closed
+opengit pr show  myrepo &lt;prId&gt;
+opengit pr review myrepo &lt;prId&gt; --verdict approve|request-changes|comment
+opengit pr merge  myrepo &lt;prId&gt;
+opengit pr close  myrepo &lt;prId&gt;</code></pre>
+<p>Same local-replica caveat as issues — cross-party PRs go via <code>opengit collab</code>.</p>
+<h2>Private repos &amp; sharing</h2>
+<h3><code>opengit invite &lt;repo&gt; &lt;recipient-pubkey&gt; [--label &quot;Bob&quot;]</code></h3>
+<p>Owner: wrap the repo's content key for a collaborator's identity pubkey.</p>
+<h3><code>opengit list-invites &lt;repo&gt;</code></h3>
+<p>Owner: list outstanding invites.</p>
+<h3><code>opengit accept-invite &lt;repo&gt;</code></h3>
+<p>Recipient: unwrap your invite and store the content key in your keyring (then you can <code>git clone</code> the private repo).</p>
+<h3><code>opengit keyring [list]</code></h3>
+<p>Show content keys held for private repos in this profile.</p>
+<h2>Multi-writer (advanced; not the proven live path)</h2>
+<h3><code>opengit add-writer &lt;repo&gt; &lt;pubkey&gt;</code> / <code>remove-writer</code> / <code>list-writers</code></h3>
+<p>Grant/revoke push rights on a <code>--multi-writer</code> repo. The recommended, proven collaboration model is <strong>fork → PR</strong> (see USER-GUIDE §6); multi-writer refs is advanced and not exercised by the live path.</p>
+<h2>Relays / mirrors / availability</h2>
+<h3><code>opengit pin-relay &lt;url&gt; &lt;pubkey&gt; [--note &quot;…&quot;]</code> / <code>unpin-relay &lt;url&gt;</code> / <code>list-pins</code></h3>
+<p>Out-of-band trust pins for relay identities (you decide which operator pubkeys you trust). Mirrors HiveRelay's <code>pinRelay()</code> shape.</p>
+<h3><code>opengit blind-publish &lt;repo&gt; --source &lt;dir&gt; [--label &quot;…&quot;]</code></h3>
+<p>Publish a <strong>private</strong> repo's encrypted blocks to a blind relay network (HiveRelay path). Private repos only. See <a href="RELAY-OPERATORS.md">RELAY-OPERATORS.md</a>.</p>
+<h3><code>opengit unseed &lt;repo&gt;</code></h3>
+<p>Send a signed kill-switch broadcasting an unseed request.</p>
+<h2>Pages (static site)</h2>
+<h3><code>opengit pages &lt;publish|url|watch&gt; &lt;repo&gt; [--encrypted] [--debounce-ms N]</code></h3>
+<p>Render the repo's HEAD into a static HTML Hyperdrive browsable from PearBrowser via <code>hyper://&lt;key&gt;/</code> or any HTTP browser.</p>
+<ul><li><code>publish</code> — one-shot render+publish.</li><li><code>url</code> — print the drive key / hyper URL.</li><li><code>watch</code> — foreground daemon, auto-republish on ref updates.</li><li><code>--encrypted</code> — AEAD-encrypt the drive with the repo's content key (required for private repos).</li></ul>
+<h2>Profiles &amp; petnames</h2>
+<h3><code>opengit profiles [list | path &lt;name&gt;]</code></h3>
+<p>Manage profiles (<code>$OPENGIT_HOME/profiles/&lt;name&gt;/</code>). Profiles never share state.</p>
+<h3><code>opengit petname [list | add &lt;kind&gt; &lt;name&gt; &lt;key&gt; [note…] | remove &lt;kind&gt; &lt;name&gt; | resolve &lt;kind&gt; &lt;name&gt;]</code></h3>
+<p>Local-first <code>name → key</code> map. <code>&lt;kind&gt;</code> is <code>users</code> or <code>repos</code>. No global registry — this is the entire naming layer.</p>
+<pre data-lang="bash"><code>opengit petname add repos alpha nibsqgk…iifby &quot;main project&quot;
+opengit petname add users ian   d286498f…f956
+opengit petname resolve repos alpha</code></pre>
+<h3><code>opengit help</code></h3>
+<p>Print the command summary.</p>
+<hr>
+<h2>Exit codes (helper)</h2>
+<p>The <code>git-remote-opengit</code> helper distinguishes failure modes so callers can act without guessing: <strong>exit 3</strong> = &quot;no peers reachable&quot; (nobody online has the repo), <strong>exit 0</strong> with an empty result = &quot;empty repo&quot;. A clone that <em>hangs</em> is the no-peers case — get a peer/relay online; it is not a logic bug.</p>
+</article>
+<footer>
+  <div class="wrap">
+    <p>
+      Apache-2.0 by default · No telemetry · No phone-home ·
+      <a href="https://github.com/bigdestiny2/opengit">source</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>

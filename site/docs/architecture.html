@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture — Opengit</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<nav class="doc-nav">
+  <div class="wrap nav-row">
+    <a href="/" class="home-link">⌬ Opengit</a>
+    <a href="/docs/quickstart.html">Quickstart</a>
+    <a href="/docs/readme.html" class="">README</a><a href="/docs/user-guide.html" class="">User Guide</a><a href="/docs/cli.html" class="">CLI</a><a href="/docs/architecture.html" class="active">Architecture</a><a href="/docs/dev-guide.html" class="">Dev Guide</a><a href="/docs/relay-operators.html" class="">Relays</a><a href="/docs/contributing.html" class="">Contributing</a><a href="/docs/roadmap.html" class="">Roadmap</a><a href="/docs/spec.html" class="">Spec</a><a href="/docs/licensing.html" class="">Licensing</a><a href="/docs/stage-4-live-result.html" class="">Live Result</a><a href="/docs/testing.html" class="">Testing</a><a href="/docs/hiverelay-integration.html" class="">HiveRelay</a><a href="/docs/pearbrowser-integration.html" class="">PearBrowser</a><a href="/docs/feasibility.html" class="">Hist · Feasibility</a><a href="/docs/decentralization-audit.html" class="">Hist · Audit</a><a href="/docs/deep-audit.html" class="">Hist · Deep Audit</a><a href="/docs/improvement-research.html" class="">Hist · Research</a><a href="/docs/state.html" class="">Hist · State</a><a href="/docs/live-test-plan.html" class="">Hist · Test Plan</a>
+  </div>
+</nav>
+<article class="doc-page wrap">
+<h1>Opengit Architecture</h1>
+<p>How Opengit turns a peer-to-peer data store into a <code>git</code> forge. This is the navigable overview; <a href="../SPEC.md"><code>SPEC.md</code></a> is the exhaustive protocol reference (data model, wire format, §-numbered). Read this first, then dive into SPEC for any section you need at depth.</p>
+<hr>
+<h2>The one-paragraph model</h2>
+<p>A repository is a <strong>Corestore</strong> (a set of Hypercores). The Corestore is the <strong>single source of truth</strong>. <code>git</code> cannot read a Corestore, so for the duration of a <code>git</code> operation Opengit regenerates a throwaway <strong>bare-git &quot;shadow&quot;</strong> on disk, lets stock <code>git upload-pack</code> / <code>receive-pack</code> do the smart-protocol work against it, and syncs the result back into the Corestore. The Corestore replicates over <strong>Hyperswarm</strong>. Issues and pull requests are <strong>signed entries on per-repo Autobases</strong>. Discovery hangs off one <strong>plaintext manifest core</strong> whose key <em>is</em> the repo address.</p>
+<pre><code>        git  ⇄  git-remote-opengit  ⇄  ShadowRepo (bare .git on disk)
+                                            ⇅  (regenerable cache)
+                                       OpengitRepo  ──  Corestore (source of truth)
+                                            ⇅                ⇅ Hyperswarm (DHT)
+                                   manifest / refs / objects / meta / meta-keys
+                                   issues-Autobase / prs-Autobase</code></pre>
+<h2>Layers</h2>
+<table><thead><tr><th>Layer</th><th>Package</th><th>Responsibility</th></tr></thead><tbody><tr><td><code>git</code> integration</td><td><code>git-remote-opengit</code></td><td>implements the git remote-helper protocol; spawns <code>git upload-pack</code>/<code>receive-pack</code> against the shadow</td></tr><tr><td>Forge library</td><td><code>opengit-core</code></td><td><code>OpengitRepo</code>, <code>OpengitForge</code>, <code>ShadowRepo</code>, <code>OpengitIdentity</code>, issues/PRs, encryption, swarm</td></tr><tr><td>CLI</td><td><code>opengit-cli</code></td><td>user-facing commands incl. the <code>collab</code> online loop</td></tr><tr><td>Availability</td><td><code>opengit-relay</code>, <code>opengit-mirror</code></td><td>pin/replicate repos so they outlive the owner being online</td></tr><tr><td>Browsing</td><td><code>opengit-pages</code></td><td>render HEAD → static HTML (PearBrowser / any browser)</td></tr><tr><td>Discovery (opt-in)</td><td><code>opengit-indexer</code></td><td>search across public repos' meta/issues</td></tr></tbody></table>
+<h2>The repo's cores</h2>
+<p>An <code>OpengitRepo</code> is a set of named Hypercores in one Corestore namespace:</p>
+<ul><li><strong><code>manifest</code></strong> — <em>plaintext, always.</em> A Hyperbee holding <code>spec</code>, <code>visibility</code>, <code>cores</code> (the hex keys of every other core), and the issues/PR Autobase bootstrap keys + collaboration authority (owners / moderators). <strong>The manifest core's key is the repo address</strong> (<code>opengit://</code>).</li><li><strong><code>refs</code></strong> — Hyperbee: <code>refs/heads/*</code>, <code>refs/tags/*</code> → OID. Single-writer (the owner). This is the path <code>git clone</code>/<code>push</code> actually uses.</li><li><strong><code>objects</code></strong> — Hyperblobs: git packfiles.</li><li><strong><code>objectIndex</code></strong> — Hyperbee: pack id → metadata.</li><li><strong><code>meta</code></strong> — Hyperbee: repo metadata (name, description, owners, …).</li><li><strong><code>metaKeys</code></strong> — Hyperbee: wrapped content-key bootstrap for private repos.</li><li><strong>issues / prs Autobases</strong> — see <em>Collaboration</em>.</li></ul>
+<p>For <strong>private</strong> repos, every core <em>except</em> <code>manifest</code> (and the plaintext bootstrap entries it needs) is per-block AEAD-encrypted with the repo's content key.</p>
+<h3>Why the manifest is the keystone (v0.0.11)</h3>
+<p>Earlier, discovery lived inside the (for private repos, <em>encrypted</em>) refs core: a collaborator needed the content key to find the cores, but the content key was bootstrapped from a core they couldn't find — a catch-22 that made private-repo cold-bootstrap impossible. The fix (&quot;A1&quot;): a <strong>plaintext manifest core is the canonical address</strong> and lists every other core's key + the collaboration authority. Anyone holding the repo key can read the manifest without the content key, discover the encrypted cores, then unwrap the content key from <code>metaKeys</code>. This single change is also what makes cross-party issues/PRs possible (the Autobase keys live in the manifest too).</p>
+<p>The remote contract: after the swarm settles, a reader must call <code>repo.refresh()</code> to re-read the manifest and (re)bind cores. The helper does this; if you build on <code>opengit-core</code>, you must too.</p>
+<h2>The shadow-bridge</h2>
+<p><code>git</code> speaks the smart protocol against a real bare repository. Opengit does <strong>not</strong> reimplement git. Instead <code>ShadowRepo</code>:</p>
+<ul><li><strong><code>pullFromRepo(repo)</code></strong> — materialize a bare <code>.git</code> at <code>$OPENGIT_HOME/profiles/&lt;p&gt;/shadow/&lt;repo-hex&gt;.git</code> from the Corestore (write refs, fetch packs, <code>git index-pack</code>). Now <code>git upload-pack</code> can serve it.</li><li><strong><code>pushToRepo(repo)</code></strong> — after <code>git receive-pack</code> lands data, harvest it back into the Corestore. Note: <code>receive-pack</code> writes <strong>loose objects</strong>, not a packfile, so <code>pushToRepo</code> runs <code>git repack -a -d</code> to consolidate (the v0.0.11 fix — without it a push stored the ref but <strong>zero objects</strong>).</li></ul>
+<p>The shadow is a <strong>regenerable cache</strong>; the Corestore is truth. Bare-repo git invocations must target <code>--git-dir &lt;shadow&gt;</code> (running with <code>cwd</code> inside a bare repo makes git hunt for <code>.git/</code> and fail — a real bug that was fixed).</p>
+<p><code>repo.isLocalWritable</code> (not the misleading core-session <code>repo.writable</code>) is the authoritative &quot;do I own this / skip the peer-gate&quot; signal the helper uses so an owner's first <code>git push</code> to a fresh repo doesn't fail &quot;no peers&quot;.</p>
+<h2>Collaboration: issues &amp; PRs (Autobase)</h2>
+<p>Each repo has an <strong>issues Autobase</strong> and a <strong>PRs Autobase</strong>. Entries (<code>issue.open</code>, <code>pr.open</code>, comments, state changes) are Ed25519-signed by the author's identity; an <code>apply</code> function validates signatures and authority and linearizes them into Hyperbee views. Moderation (close/merge) is restricted to owners/moderators read from the <strong>manifest</strong> (not <code>meta</code> — see the bug below).</p>
+<h3>Two bugs the live-test prep caught here (instructive)</h3>
+<ol><li><strong>Shared <code>local</code> core deadlock.</strong> Autobase derives its local writer as <code>store.get({ name: 'local' })</code> and system view as <code>{ name: '_system' }</code> — <em>fixed names on the passed store</em>, opened <code>exclusive:true</code>. All three repo Autobases (refs/issues/prs) were built on the same raw Corestore ⇒ they collided on one <code>local</code> core. On a quiescent owner store the first init wins (unit tests passed); on a <strong>non-writable, replicating</strong> store the <em>second</em> Autobase's <code>ready()</code> deadlocked forever. Fix: each Autobase gets its own <code>store.namespace('opengit:autobase:&lt;refs|issues|prs&gt;')</code>.</li><li><strong>Isolated silos / empty moderator set.</strong> Autobases were <code>bootstrap=null</code> (each forge minted its own, unlinked) and the key was never published, so a contributor's issue never reached the maintainer. Fix (the A1 pattern): the owner founds the Autobases at <code>init()</code> and publishes their bootstrap keys <strong>and the owners/moderators list</strong> in the plaintext manifest; a contributor bootstraps the <em>identical</em> Autobase from that key. Sourcing authority from the late/encrypted <code>meta</code> gave contributors an empty moderator set ⇒ every <code>writer.add</code> was silently dropped — fixed by publishing authority in the manifest.</li></ol>
+<h3>The admission handshake (v0.0.12)</h3>
+<p><code>repo.collabKeys()</code> → contributor's Autobase input-core public keys → <code>repo.admitCollaborator(keys)</code> (owner appends a signed <code>writer.add</code> wiring Autobase's native <code>host.addWriter</code>) → <code>repo.syncCollab()</code> (contributor waits until writable). After that, the contributor's signed issues/PRs linearize on every replica. The <code>opengit collab</code> command and <code>scripts/live-collab.js</code> drive exactly this; it is proven live across two machines.</p>
+<h2>Identity</h2>
+<p><code>OpengitIdentity</code> wraps <strong><code>keet-identity-key</code></strong>: a 24-word BIP-39 mnemonic is the root; device subkeys derive from it; proofs verify to <code>{identityPublicKey, devicePublicKey}</code>. <code>IdentityStore.loadOrCreate()</code> is per-profile and persistent. Every forge action that needs authorship signs with this identity.</p>
+<h2>Swarm &amp; topics</h2>
+<p><code>OpengitForge</code> owns one Hyperswarm; <code>joinRepoTopic(repo, {server, client})</code> joins the repo's topic. Topic = <code>publicRepoTopic(repo.keyZ32)</code> for <strong>all</strong> repos (a private-topic variant was reverted because it broke cold-bootstrap — the manifest must be discoverable by the repo key alone). Replication is whole-Corestore (<code>store.replicate()</code>), so no per-Autobase key is announced; that's why namespacing Autobases internally is safe w.r.t. the wire.</p>
+<p><code>OPENGIT_BOOTSTRAP</code> overrides the DHT bootstrap (defaults to the public Holepunch DHT). <code>SwarmFixture</code> (test-helpers) is a local single-node DHT for in-process tests — note its documented limit: it cannot holepunch the blind-peer muxer or cross-process the git-helper subprocess, which is why those are deliberate skips validated live instead.</p>
+<h2>Availability model</h2>
+<p>P2P has no implicit always-on server. A repo is reachable while: the owner <code>opengit serve</code>s it, <strong>or</strong> a peer has it open, <strong>or</strong> a <strong>blind-peer / relay</strong> pins its cores. <code>forge.setBlindPeerMirrors([pubkeys])</code> + <code>requestBlindPin(repo)</code> ask a blind-peer server (you trust by pubkey) to keep the 5 repo cores alive — <code>opengit serve --mirror &lt;pubkey&gt;</code> wires this. Private-repo ciphertext broadcast is <code>publishToBlindRelay()</code> (the AGPL <code>--use-hiverelay</code> path). See <a href="RELAY-OPERATORS.md">RELAY-OPERATORS.md</a>.</p>
+<h2>Decentralization invariants (enforced, not aspirational)</h2>
+<ul><li><strong>No central server, no foundation, no registry.</strong> The repo <em>is</em> its manifest key.</li><li><strong>No telemetry / phone-home.</strong> Anywhere.</li><li><strong>Local-first naming.</strong> Petnames only; no global namespace to capture.</li><li><strong>Operator-chosen trust.</strong> Relays are trusted by explicit pubkey-pinning + content-key choice; no implicit trust.</li><li><strong>License boundary.</strong> Apache-2.0 everywhere; AGPL only via the explicit <code>opengit-relay --use-hiverelay</code> opt-in.</li></ul>
+<p>Audit trail: <a href="history/DECENTRALIZATION-AUDIT.md">docs/history/DECENTRALIZATION-AUDIT.md</a>, <a href="history/DEEP-AUDIT-v0.0.7.md">docs/history/DEEP-AUDIT-v0.0.7.md</a>.</p>
+<h2>Where to go next</h2>
+<ul><li>Build/test/extend: <a href="DEV-GUIDE.md">DEV-GUIDE.md</a></li><li>Exhaustive protocol: <a href="../SPEC.md"><code>SPEC.md</code></a></li><li>The proof it works: <a href="../STAGE-4-LIVE-RESULT.md"><code>STAGE-4-LIVE-RESULT.md</code></a></li><li>Why prep caught 8 bugs: <a href="history/LIVE-TEST-PLAN.md">docs/history/LIVE-TEST-PLAN.md</a> §Status</li></ul>
+</article>
+<footer>
+  <div class="wrap">
+    <p>
+      Apache-2.0 by default · No telemetry · No phone-home ·
+      <a href="https://github.com/bigdestiny2/opengit">source</a>
+    </p>
+  </div>
+</footer>
+</body>
+</html>
