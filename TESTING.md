@@ -106,11 +106,19 @@ opengit collab contributor --repo <REPO_KEY>
 The blob is **not secret** — it is two Autobase input-core *public* keys.
 Admitting a collaborator is a deliberate act (like “add collaborator” on GitHub).
 
-**2. You (maintainer)** — drop Ian's blob into the watch file, in the **same
-working directory** where the maintainer node runs:
+**2. You (maintainer)** — admit Ian. Either drop his blob into the watch file
+in the **same working directory** the maintainer runs from:
 
 ```bash
 echo 'PASTE_THE_CONTRIB_BLOB_HERE' > live-admit.txt
+```
+
+…or, if you'd rather not use the file, run the one-shot from any terminal on
+the **owner** machine/profile (it joins, admits, replicates, exits):
+
+```bash
+opengit collab admit opengit 'PASTE_THE_CONTRIB_BLOB_HERE' --wait 30
+#   ("opengit" = the repo's local petname/--name; or pass the 52-char REPO_KEY)
 ```
 
 **3. Watch it complete (automatic from here):**
