@@ -20,7 +20,6 @@ node packages/opengit-indexer/bin/opengit-indexer.js   # see --help for flags
 This is the *only* "discovery" layer, and it's deliberately decentralized and
 optional — Opengit's primary naming is local-first petnames.
 
-Background: [`../../docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md),
-[`../../docs/history/DECENTRALIZATION-AUDIT.md`](../../docs/history/DECENTRALIZATION-AUDIT.md).
+Background: [`../../docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md).
 
 License: **Apache-2.0**.

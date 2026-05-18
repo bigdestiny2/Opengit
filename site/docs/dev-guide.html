@@ -23,7 +23,7 @@
     </nav>
   </div>
 </header>
-<nav class="doc-nav"><div class="wrap nav-scroll"><a href="../docs/quickstart.html">Quickstart</a><a href="../docs/readme.html">README</a><a href="../docs/why-opengit.html">Why</a><a href="../docs/user-guide.html">User Guide</a><a href="../docs/cli.html">CLI</a><a href="../docs/architecture.html">Architecture</a><a href="../docs/dev-guide.html" class="active">Dev Guide</a><a href="../docs/relay-operators.html">Relays</a><a href="../docs/contributing.html">Contributing</a><a href="../docs/roadmap.html">Roadmap</a><a href="../docs/competitive-landscape.html">Landscape</a><a href="../docs/spec.html">Spec</a><a href="../docs/licensing.html">Licensing</a><a href="../docs/stage-4-live-result.html">Live Result</a><a href="../docs/testing.html">Testing</a><a href="../docs/hiverelay-integration.html">HiveRelay</a><a href="../docs/pearbrowser-integration.html">PearBrowser</a><a href="../docs/feasibility.html">Hist · Feasibility</a><a href="../docs/decentralization-audit.html">Hist · Audit</a><a href="../docs/deep-audit.html">Hist · Deep Audit</a><a href="../docs/improvement-research.html">Hist · Research</a><a href="../docs/state.html">Hist · State</a><a href="../docs/live-test-plan.html">Hist · Test Plan</a></div></nav>
+<nav class="doc-nav"><div class="wrap nav-scroll"><a href="../docs/quickstart.html">Quickstart</a><a href="../docs/readme.html">README</a><a href="../docs/why-opengit.html">Why</a><a href="../docs/user-guide.html">User Guide</a><a href="../docs/cli.html">CLI</a><a href="../docs/architecture.html">Architecture</a><a href="../docs/dev-guide.html" class="active">Dev Guide</a><a href="../docs/relay-operators.html">Relays</a><a href="../docs/contributing.html">Contributing</a><a href="../docs/roadmap.html">Roadmap</a><a href="../docs/competitive-landscape.html">Landscape</a><a href="../docs/spec.html">Spec</a><a href="../docs/licensing.html">Licensing</a><a href="../docs/stage-4-live-result.html">Live Result</a><a href="../docs/testing.html">Testing</a><a href="../docs/hiverelay-integration.html">HiveRelay</a><a href="../docs/pearbrowser-integration.html">PearBrowser</a></div></nav>
 <main class="doc-page wrap">
 <h1>Opengit Developer Guide</h1>
 <p>For people building <strong>on</strong> <code>opengit-core</code> or hacking <strong>on</strong> Opengit itself. Read <a href="architecture.html">ARCHITECTURE.md</a> first for the mental model.</p>
@@ -42,7 +42,7 @@
 scripts/               dry-run-collab.js, dry-run-fork-push.js,
                        live-collab.js, preflight-relay.js, build-site.js
 test-helpers/          swarm-fixture.js (local single-node DHT)
-SPEC.md  TESTING.md  STAGE-4-LIVE-RESULT.md  docs/  docs/history/</code></pre>
+SPEC.md  TESTING.md  STAGE-4-LIVE-RESULT.md  docs/</code></pre>
 <h2>Setup</h2>
 <pre data-lang="bash"><code>npm install            # workspace install; pulls Holepunch deps
 node -v                # ≥ 20 (tested 22)
@@ -62,6 +62,14 @@ node scripts/dry-run-fork-push.js  # fork→fetch→merge contributor push → 1
 node scripts/preflight-relay.js    # relay/blind-peer wiring          → 12/12</code></pre>
 <p>Two real OS processes can rendezvous over a <code>SwarmFixture</code> (confirmed); the git-helper <em>subprocess</em> over the synthetic single-node DHT cannot — that gap is exactly what the live two-machine test (TESTING.md) covers.</p>
 <blockquote><p><strong>Discipline that delivered the milestone:</strong> every risky path is proven solo in-harness <em>before</em> it's run live. Stage 0 prep this way caught and fixed <strong>8 real bugs</strong> that would each have killed the live session. If you add an unproven path, add a dry-run for it. One unproven variable at a time.</p></blockquote>
+<h2>Local preview (inspect the site + web app in a browser)</h2>
+<p>Both web surfaces are relative-path + zero-external, so they render identically over plain HTTP and at <code>hyper://&lt;key&gt;/</code>. Inspect them locally:</p>
+<pre data-lang="bash"><code>npm run preview          # build site + web-app (this repo) → serve .preview/
+#   → http://localhost:8088/site/   the landing site
+#   → http://localhost:8088/app/    the web app (full forge UI for THIS repo)</code></pre>
+<p>Pieces (all zero-dependency, local-only, no telemetry):</p>
+<ul><li><code>scripts/build-site.js</code> — generate the static landing <code>site/</code>.</li><li><code>scripts/preview-webapp.js</code> — seed a throwaway forge from this repo's real <code>.git</code> (proven shadow path), <code>renderApp</code> it into <code>.preview/app</code>.</li><li><code>scripts/serve-local.js</code> — a tiny <code>node:http</code> static server.</li></ul>
+<p><code>npm run preview:site</code> / <code>preview:app</code> / <code>preview:serve</code> run the steps individually. <code>.preview/</code> and <code>.site-drive/</code> are gitignored — nothing preview-related is committed. To publish for real (web host or a Hyperdrive for PearBrowser) see <code>scripts/publish-site.js</code> and <code>opengit pages publish &lt;repo&gt; --app</code>.</p>
 <h2><code>opengit-core</code> public API (the essentials)</h2>
 <p><code>require('opengit-core')</code> exports: <code>OpengitRepo</code>, <code>OpengitForge</code>, <code>OpengitIdentity</code>, <code>Keyring</code>, <code>Petnames</code>, <code>IdentityStore</code>, <code>PinnedRelays</code>, <code>ShadowRepo</code>, <code>gitAvailable</code>, <code>dbg</code>, <code>knownRelays</code>, <code>profile</code>, <code>topic</code>, <code>wrappedKey</code>, <code>multiRefs</code>, <code>constants</code>.</p>
 <h3>Forge</h3>

@@ -138,5 +138,4 @@ touches public content. See [`packages/opengit-indexer`](../packages/opengit-ind
   self-hosting.
 
 Background: [../HIVERELAY-INTEGRATION.md](../HIVERELAY-INTEGRATION.md)
-(verified upstream snapshot + integration design),
-[history/DECENTRALIZATION-AUDIT.md](history/DECENTRALIZATION-AUDIT.md).
+(verified upstream snapshot + integration design).

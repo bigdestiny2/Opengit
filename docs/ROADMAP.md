@@ -1,8 +1,6 @@
 # Opengit Roadmap
 
-Forward-looking work. The historical campaign that delivered the live
-milestone is archived at
-[docs/history/LIVE-TEST-PLAN.md](history/LIVE-TEST-PLAN.md); the proof is
+Forward-looking work. The proof that the core works end-to-end is
 [../STAGE-4-LIVE-RESULT.md](../STAGE-4-LIVE-RESULT.md). This page tracks
 what's next.
 

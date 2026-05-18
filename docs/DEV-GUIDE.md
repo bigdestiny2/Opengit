@@ -21,7 +21,7 @@ packages/
 scripts/               dry-run-collab.js, dry-run-fork-push.js,
                        live-collab.js, preflight-relay.js, build-site.js
 test-helpers/          swarm-fixture.js (local single-node DHT)
-SPEC.md  TESTING.md  STAGE-4-LIVE-RESULT.md  docs/  docs/history/
+SPEC.md  TESTING.md  STAGE-4-LIVE-RESULT.md  docs/
 ```
 
 ## Setup

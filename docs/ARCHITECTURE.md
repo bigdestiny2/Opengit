@@ -177,12 +177,11 @@ Private-repo ciphertext broadcast is `publishToBlindRelay()` (the AGPL
 - **License boundary.** Apache-2.0 everywhere; AGPL only via the explicit
   `opengit-relay --use-hiverelay` opt-in.
 
-Audit trail: [docs/history/DECENTRALIZATION-AUDIT.md](history/DECENTRALIZATION-AUDIT.md),
-[docs/history/DEEP-AUDIT-v0.0.7.md](history/DEEP-AUDIT-v0.0.7.md).
+These invariants are enforced in code and tests, not just stated here.
 
 ## Where to go next
 
 - Build/test/extend: [DEV-GUIDE.md](DEV-GUIDE.md)
 - Exhaustive protocol: [`SPEC.md`](../SPEC.md)
 - The proof it works: [`STAGE-4-LIVE-RESULT.md`](../STAGE-4-LIVE-RESULT.md)
-- Why prep caught 8 bugs: [docs/history/LIVE-TEST-PLAN.md](history/LIVE-TEST-PLAN.md) §Status
+- Why the prep discipline caught 8 bugs before the live run: [`STAGE-4-LIVE-RESULT.md`](../STAGE-4-LIVE-RESULT.md)

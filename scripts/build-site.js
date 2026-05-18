@@ -20,9 +20,9 @@ const ROOT = path.resolve(__dirname, '..')
 const SITE = path.join(ROOT, 'site')
 const DOCS = path.join(SITE, 'docs')
 
-// Ordered: front door + the current dev/user guides first, then references,
-// then point-in-time history (archived under docs/history/). Keep `src`
-// paths in sync with the repo layout — a missing file throws the build.
+// Ordered: front door + the current dev/user guides first, then
+// references. Keep `src` paths in sync with the repo layout — a missing
+// file throws the build.
 const DOC_MAP = [
   { src: 'README.md',                         out: 'docs/readme.html',                 title: 'README',                     navLabel: 'README' },
   { src: 'docs/WHY-OPENGIT.md',               out: 'docs/why-opengit.html',            title: 'Why Opengit',                navLabel: 'Why' },
@@ -39,13 +39,7 @@ const DOC_MAP = [
   { src: 'STAGE-4-LIVE-RESULT.md',            out: 'docs/stage-4-live-result.html',    title: 'Live Result (milestone)',    navLabel: 'Live Result' },
   { src: 'TESTING.md',                        out: 'docs/testing.html',                title: 'Two-Machine Test Runbook',   navLabel: 'Testing' },
   { src: 'HIVERELAY-INTEGRATION.md',          out: 'docs/hiverelay-integration.html',  title: 'HiveRelay Integration',      navLabel: 'HiveRelay' },
-  { src: 'PEARBROWSER-INTEGRATION.md',        out: 'docs/pearbrowser-integration.html', title: 'PearBrowser Integration',   navLabel: 'PearBrowser' },
-  { src: 'docs/history/FEASIBILITY.md',             out: 'docs/feasibility.html',             title: 'Feasibility (history)',             navLabel: 'Hist · Feasibility' },
-  { src: 'docs/history/DECENTRALIZATION-AUDIT.md',  out: 'docs/decentralization-audit.html',  title: 'Decentralization Audit (history)',  navLabel: 'Hist · Audit' },
-  { src: 'docs/history/DEEP-AUDIT-v0.0.7.md',       out: 'docs/deep-audit.html',              title: 'Deep Audit v0.0.7 (history)',       navLabel: 'Hist · Deep Audit' },
-  { src: 'docs/history/IMPROVEMENT-RESEARCH.md',    out: 'docs/improvement-research.html',    title: 'Improvement Research (history)',    navLabel: 'Hist · Research' },
-  { src: 'docs/history/STATE-OF-OPENGIT-v0.0.10.md', out: 'docs/state.html',                  title: 'State of Opengit v0.0.10 (history)', navLabel: 'Hist · State' },
-  { src: 'docs/history/LIVE-TEST-PLAN.md',          out: 'docs/live-test-plan.html',          title: 'Live Test Plan (history)',          navLabel: 'Hist · Test Plan' }
+  { src: 'PEARBROWSER-INTEGRATION.md',        out: 'docs/pearbrowser-integration.html', title: 'PearBrowser Integration',   navLabel: 'PearBrowser' }
 ]
 
 // Hand-written quickstart (not in the repo as a .md yet).

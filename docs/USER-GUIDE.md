@@ -290,5 +290,5 @@ global registry to capture or squat.
 | Private clone can't decrypt | You haven't `accept-invite`d, or the manifest replicated but meta-keys hadn't yet — retry once connected. |
 | Two `opengit` commands on one profile at once | Corestore is single-process per storage dir. Don't run `serve` and another mutating command on the same `OPENGIT_HOME`/profile simultaneously; use a second profile or sequence them. |
 
-Deeper context for any of these: [TESTING.md](../TESTING.md) failure playbook
-and [docs/history/LIVE-TEST-PLAN.md](history/LIVE-TEST-PLAN.md).
+Deeper context for any of these: the [TESTING.md](../TESTING.md) failure
+playbook.
