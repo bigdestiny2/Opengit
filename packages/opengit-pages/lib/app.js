@@ -16,6 +16,7 @@
 
 const path = require('path')
 const fs = require('fs')
+const { spawnSync } = require('child_process')
 const b4a = require('b4a')
 
 const { ShadowRepo, gitAvailable } = require('opengit-core')
@@ -27,14 +28,144 @@ const SPA_DIR = path.join(__dirname, '..', 'spa')
 const safeBranch = (n) => String(n).replace(/[^\w.-]+/g, '_')
 const J = (obj) => b4a.from(JSON.stringify(obj))
 
+// Run git against a bare shadow .git, returning { ok, out } (never throws).
+function git (gitDir, args, max = 16 * 1024 * 1024) {
+  try {
+    const r = spawnSync('git', ['--git-dir', gitDir, ...args], {
+      encoding: 'utf8', maxBuffer: max
+    })
+    return { ok: r.status === 0, out: r.status === 0 ? (r.stdout || '') : '', err: r.stderr || '' }
+  } catch (e) {
+    return { ok: false, out: '', err: String(e && e.message || e) }
+  }
+}
+
+const shortOid = (oid) => (oid || '').trim().slice(0, 12)
+
+// Parse `git diff --numstat --name-status A..B` (run separately, joined here)
+// into [{ path, status, additions, deletions }]. numstat lines:
+// "<add>\t<del>\t<path>"; name-status: "<X>\t<path>" (R: "R100\told\tnew").
+function parseDiffFiles (numstat, namestatus) {
+  const stat = new Map() // path -> { additions, deletions }
+  for (const line of numstat.split('\n')) {
+    if (!line) continue
+    const parts = line.split('\t')
+    if (parts.length < 3) continue
+    const add = parts[0] === '-' ? 0 : parseInt(parts[0], 10) || 0
+    const del = parts[1] === '-' ? 0 : parseInt(parts[1], 10) || 0
+    // For renames numstat path is "old => new" or rename-formatted; the
+    // name-status pass below is authoritative for path+status, so key on
+    // the last whitespace-free token (the new path) as a best effort.
+    const p = parts.slice(2).join('\t')
+    stat.set(p, { additions: add, deletions: del })
+  }
+  const files = []
+  for (const line of namestatus.split('\n')) {
+    if (!line) continue
+    const parts = line.split('\t')
+    const code = parts[0] || ''
+    const status = code[0] || 'M' // A|M|D|R|C|T...
+    let p
+    if (status === 'R' || status === 'C') p = parts[2] || parts[1] || ''
+    else p = parts[1] || ''
+    if (!p) continue
+    const s = stat.get(p) || stat.get(parts[1]) || { additions: 0, deletions: 0 }
+    files.push({ path: p, status, additions: s.additions, deletions: s.deletions })
+  }
+  return files
+}
+
+// Compute the code diff for a PR. `shadowPath` is the base repo's bare .git;
+// `forkShadowPath` is the contributor fork's bare .git (may === shadowPath
+// for same-repo branch PRs, or null if the fork isn't in this snapshot).
+// Returns the `diff` object for api/pr/<id>.json — always resolves, never
+// throws (any git failure → { available:false, reason }).
+function computePRDiff (pr, shadowPath, forkShadowPath, maxInlineBytes) {
+  const fromRef = pr && pr.fromRef
+  const toRef = pr && pr.toRef
+  const fromRepo = pr && pr.fromRepo
+  if (!fromRef || !toRef) {
+    return { available: false, reason: 'pull request missing fromRef/toRef' }
+  }
+  if (!forkShadowPath) {
+    return { available: false, reason: 'contributor fork not replicated in this forge snapshot' }
+  }
+
+  const sameRepo = forkShadowPath === shadowPath
+  const tmpRef = `refs/pr/${String(pr.prId).replace(/[^\w.-]+/g, '_')}`
+  let headRef // ref/oid that resolves to the fork tip in the base repo
+
+  try {
+    if (sameRepo) {
+      headRef = fromRef
+    } else {
+      // Local fetch between two on-disk bare repos (no network): bring the
+      // fork's fromRef tip into the base repo under a temp ref.
+      const fetched = git(shadowPath, ['fetch', '--no-tags', forkShadowPath, `${fromRef}:${tmpRef}`])
+      if (!fetched.ok) {
+        return { available: false, reason: 'could not fetch contributor ref into snapshot' }
+      }
+      headRef = tmpRef
+    }
+
+    const headOidR = git(shadowPath, ['rev-parse', '--verify', `${headRef}^{commit}`])
+    if (!headOidR.ok) return { available: false, reason: 'contributor ref not found in snapshot' }
+    const headOid = headOidR.out.trim()
+
+    const toOidR = git(shadowPath, ['rev-parse', '--verify', `${toRef}^{commit}`])
+    if (!toOidR.ok) return { available: false, reason: 'target ref not found in snapshot' }
+    const toOid = toOidR.out.trim()
+
+    // Prefer merge-base (true "what this PR adds"); fall back to toRef tip.
+    let base = toOid
+    const mb = git(shadowPath, ['merge-base', toOid, headOid])
+    if (mb.ok && mb.out.trim()) base = mb.out.trim()
+
+    const range = `${base}..${headOid}`
+    const numstat = git(shadowPath, ['diff', '--no-color', '--numstat', range])
+    const namestatus = git(shadowPath, ['diff', '--no-color', '--name-status', range])
+    const files = (numstat.ok && namestatus.ok)
+      ? parseDiffFiles(numstat.out, namestatus.out)
+      : []
+
+    const patchR = git(shadowPath, ['diff', '--no-color', range])
+    const out = {
+      available: true,
+      fromRepo: fromRepo || null,
+      fromRef,
+      toRef,
+      base: shortOid(base),
+      head: shortOid(headOid),
+      files
+    }
+    const patch = patchR.ok ? patchR.out : ''
+    if (b4a.byteLength(patch) > maxInlineBytes) {
+      out.patch = ''
+      out.truncated = true
+    } else {
+      out.patch = patch
+    }
+    return out
+  } catch (e) {
+    return { available: false, reason: 'diff computation failed: ' + String(e && e.message || e) }
+  } finally {
+    // Idempotent re-runs: drop the temp fetch ref.
+    if (!sameRepo) git(shadowPath, ['update-ref', '-d', tmpRef])
+  }
+}
+
 // Emit one repo's full JSON API under `prefix` (e.g. "/r/<keyZ32>").
-async function * emitRepo (repo, prefix, profileName, shadowRoot, opts) {
+// `shadowPaths` is a Map<keyHex, shadowPath> of every repo in this forge
+// build, so a PR's `fromRepo` fork can be resolved to an on-disk bare .git
+// for an honest, offline diff (only repos in this snapshot are resolvable).
+async function * emitRepo (repo, prefix, profileName, shadowRoot, opts, shadowPaths) {
   const meta = await repo.getMeta()
   const repoName = meta.name || 'unnamed-repo'
   const defaultBranch = meta.defaultBranch || 'main'
 
   const shadow = new ShadowRepo({ repoKeyHex: repo.keyHex, profileName, root: shadowRoot })
   await shadow.pullFromRepo(repo)
+  if (shadowPaths) shadowPaths.set(String(repo.keyHex).toLowerCase(), shadow.path)
 
   const refs = await repo.listRefs()
   const branches = refs.filter(r => r.ref.startsWith('refs/heads/'))
@@ -105,7 +236,18 @@ async function * emitRepo (repo, prefix, profileName, shadowRoot, opts) {
       let events = []
       try { events = await repo.listPREvents(p.prId) } catch {}
       const full = (await repo.getPR(p.prId).catch(() => null)) || p
-      yield { path: `${prefix}/api/pr/${p.prId}.json`, bytes: J({ pr: full, events }) }
+      let diff
+      try {
+        const fromHex = String(full.fromRepo || '').toLowerCase()
+        const selfHex = String(repo.keyHex).toLowerCase()
+        const forkPath = fromHex === selfHex
+          ? shadow.path
+          : (shadowPaths && shadowPaths.get(fromHex)) || null
+        diff = computePRDiff(full, shadow.path, forkPath, opts.maxInlineBytes)
+      } catch (e) {
+        diff = { available: false, reason: 'diff computation failed: ' + String(e && e.message || e) }
+      }
+      yield { path: `${prefix}/api/pr/${p.prId}.json`, bytes: J({ pr: full, events, diff }) }
     }
   } catch {
     yield { path: `${prefix}/api/prs.json`, bytes: J([]) }
@@ -126,9 +268,19 @@ async function * renderApp ({ repo, repos, profileName, shadowRoot, options = {}
     yield { path: '/' + f, bytes: fs.readFileSync(path.join(SPA_DIR, src)) }
   }
 
+  // Pre-materialize every repo's shadow so a PR's `fromRepo` fork can be
+  // resolved to an on-disk bare .git regardless of emit order (a fork may
+  // be listed after the repo whose PR points at it).
+  const shadowPaths = new Map()
+  for (const r of list) {
+    const sh = new ShadowRepo({ repoKeyHex: r.keyHex, profileName, root: shadowRoot })
+    await sh.pullFromRepo(r)
+    shadowPaths.set(String(r.keyHex).toLowerCase(), sh.path)
+  }
+
   const index = []
   for (const r of list) {
-    const gen = emitRepo(r, `/r/${r.keyZ32}`, profileName, shadowRoot, opts)
+    const gen = emitRepo(r, `/r/${r.keyZ32}`, profileName, shadowRoot, opts, shadowPaths)
     let res = await gen.next()
     while (!res.done) { yield res.value; res = await gen.next() }
     index.push(res.value)
