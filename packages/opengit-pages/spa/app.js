@@ -136,7 +136,7 @@
       '<footer class="foot"><div>' +
         '<span class="g">⌬</span> a peer-to-peer code forge · served from a Hyperdrive · works offline in ' +
         '<a href="https://github.com/bigdestiny2/PearBrowser">PearBrowser</a> &amp; any browser · read-only snapshot · ' +
-        '<a href="https://github.com/bigdestiny2/Opengit">Opengit</a>' +
+        '<a href="about/">About</a> · <a href="https://github.com/bigdestiny2/Opengit">Opengit</a>' +
       '</div></footer>'
     var sel = document.getElementById('brsel')
     if (sel) sel.onchange = function () { location.hash = rurl('/files/' + encodeURIComponent(sel.value) + '/') }

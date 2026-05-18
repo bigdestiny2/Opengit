@@ -16,7 +16,9 @@
     "preview:serve": "node scripts/serve-local.js --dir .preview --port 8088",
     "preview": "node scripts/build-site.js && node scripts/preview-webapp.js && node scripts/serve-local.js --dir .preview --port 8088",
     "forge": "node scripts/build-forge.js",
-    "forge:serve": "node scripts/build-forge.js && node scripts/serve-local.js --dir dist --port 8090"
+    "forge:serve": "node scripts/build-forge.js && node scripts/serve-local.js --dir dist --port 8090",
+    "forge:hyper": "node scripts/publish-site.js --dir dist",
+    "deploy:cf": "node scripts/build-forge.js && npx --yes wrangler@latest pages deploy dist --project-name opengit-forge --commit-dirty=true"
   },
   "engines": {
     "node": ">=20"

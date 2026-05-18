@@ -106,11 +106,36 @@ async function main () {
   }
   await forge.close()
 
+  // Marketing landing → /about/ (forge web app stays at /). The landing is
+  // relative-path so it serves correctly from a subpath.
+  process.stdout.write('▸ landing → /about/\n')
+  run('node', [path.join(ROOT, 'scripts/build-site.js')], { stdio: 'ignore' })
+  const siteSrc = path.join(ROOT, 'site')
+  if (fs.existsSync(path.join(siteSrc, 'index.html'))) {
+    copyDir(siteSrc, path.join(OUT, 'about'))
+    n += 1
+  }
+
+  // Cloudflare Pages cache headers: hash-free assets/json revalidate;
+  // immutable raw blobs cache long; html no-cache (snapshot can change).
+  fs.writeFileSync(path.join(OUT, '_headers'),
+    '/assets/*\n  Cache-Control: public, max-age=86400\n' +
+    '/r/*/raw/*\n  Cache-Control: public, max-age=86400\n' +
+    '/api/*\n  Cache-Control: public, max-age=300\n' +
+    '/r/*/api/*\n  Cache-Control: public, max-age=300\n' +
+    '/*\n  Cache-Control: public, max-age=0, must-revalidate\n' +
+    '/*\n  X-Content-Type-Options: nosniff\n')
+  // No history-API routing (the SPA is hash-routed) so no _redirects needed.
+
   const idx = JSON.parse(fs.readFileSync(path.join(OUT, 'api', 'index.json'), 'utf8'))
+  const rel = path.relative(ROOT, OUT)
   process.stdout.write(
-    `\nforge built → ${OUT}\n  ${idx.count} repos: ${idx.repos.map(x => x.name).join(', ')}\n  ${n} files\n` +
-    `  deploy: any static host (relative paths) OR  node scripts/publish-site.js --dir ${path.relative(ROOT, OUT)}  (Hyperdrive)\n` +
-    `  inspect: node scripts/serve-local.js --dir ${path.relative(ROOT, OUT)} --port 8090\n`
+    `\nforge built → ${OUT}\n` +
+    `  ${idx.count} repos: ${idx.repos.map(x => x.name).join(', ')}\n` +
+    `  ${n} files · forge at /  · landing at /about/\n` +
+    `  deploy (Cloudflare Pages):  npm run deploy:cf\n` +
+    `  publish P2P (Hyperdrive):   node scripts/publish-site.js --dir ${rel}\n` +
+    `  inspect locally:            node scripts/serve-local.js --dir ${rel} --port 8090\n`
   )
 }
 main().catch(e => { console.error(e); process.exit(1) })
