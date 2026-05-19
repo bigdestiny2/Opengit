@@ -20,6 +20,7 @@
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const crypto = require('crypto')
 const { spawnSync } = require('child_process')
 
 const ROOT = path.resolve(__dirname, '..')
@@ -116,10 +117,36 @@ async function main () {
     n += 1
   }
 
-  // Cloudflare Pages cache headers: hash-free assets/json revalidate;
-  // immutable raw blobs cache long; html no-cache (snapshot can change).
+  // Cache-busting: content-hash the SPA bundle and rewrite index.html to
+  // point at the hashed names. Without this, /assets/app.js has a STABLE
+  // filename under a 24h max-age, so a redeploy stays invisible on a
+  // CDN-cached custom domain until the edge TTL expires. Hashed names mean
+  // every rebuild gets a fresh URL — the always-revalidated index.html
+  // immediately references it, so redeploys are visible at once (and the
+  // long asset cache becomes correct because the names are now immutable).
+  const indexHtmlPath = path.join(OUT, 'index.html')
+  if (fs.existsSync(indexHtmlPath)) {
+    let html = fs.readFileSync(indexHtmlPath, 'utf8')
+    for (const name of ['app.js', 'app.css']) {
+      const assetPath = path.join(OUT, 'assets', name)
+      if (!fs.existsSync(assetPath)) continue
+      const buf = fs.readFileSync(assetPath)
+      const h = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 10)
+      const ext = path.extname(name)
+      const hashed = `${path.basename(name, ext)}.${h}${ext}`
+      fs.renameSync(assetPath, path.join(OUT, 'assets', hashed))
+      // Rewrite RELATIVE refs only (assets/app.js — never a leading slash),
+      // keeping the SPA self-contained + path-portable (web & hyper://).
+      html = html.split(`assets/${name}`).join(`assets/${hashed}`)
+    }
+    fs.writeFileSync(indexHtmlPath, html)
+  }
+
+  // Cloudflare Pages cache headers: assets are now content-hashed
+  // (immutable) so the long cache is safe; json revalidates often; html is
+  // always revalidated so it always points at the current hashed bundle.
   fs.writeFileSync(path.join(OUT, '_headers'),
-    '/assets/*\n  Cache-Control: public, max-age=86400\n' +
+    '/assets/*\n  Cache-Control: public, max-age=86400, immutable\n' +
     '/r/*/raw/*\n  Cache-Control: public, max-age=86400\n' +
     '/api/*\n  Cache-Control: public, max-age=300\n' +
     '/r/*/api/*\n  Cache-Control: public, max-age=300\n' +
