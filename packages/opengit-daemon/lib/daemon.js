@@ -1,6 +1,9 @@
 'use strict'
 
 const http = require('http')
+const crypto = require('crypto')
+const fs = require('fs')
+const path = require('path')
 const { URL } = require('url')
 
 const { OpengitForge } = require('opengit-core')
@@ -10,6 +13,11 @@ const DEFAULT_MAX_OPEN_REPOS = 32
 const DEFAULT_IDLE_MS = 5 * 60 * 1000
 const DEFAULT_PROJECTION_TTL_MS = 1000
 const MAX_LIST_LIMIT = 500
+const MAX_BODY_BYTES = 1 << 20 // 1 MiB — bound request bodies (memory-DoS guard)
+// Host headers we accept. Anti-DNS-rebinding: a remote page whose domain
+// resolves to 127.0.0.1 still sends `Host: attacker.example`, rejected here
+// even though the TCP peer is loopback.
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', '[::1]', 'localhost'])
 
 class OpengitDaemon {
   constructor ({
@@ -21,7 +29,10 @@ class OpengitDaemon {
     port = 8765,
     maxOpenRepos = DEFAULT_MAX_OPEN_REPOS,
     idleMs = DEFAULT_IDLE_MS,
-    projectionTtlMs = DEFAULT_PROJECTION_TTL_MS
+    projectionTtlMs = DEFAULT_PROJECTION_TTL_MS,
+    allowOrigin = null,
+    token = null,
+    tokenPath = null
   } = {}) {
     if (!storage) throw new Error('storage path required')
     this.storage = storage
@@ -33,6 +44,19 @@ class OpengitDaemon {
     this.maxOpenRepos = positiveInt(maxOpenRepos, 'maxOpenRepos')
     this.idleMs = positiveInt(idleMs, 'idleMs')
     this.projectionTtlMs = positiveInt(projectionTtlMs, 'projectionTtlMs')
+    // CORS is OPT-IN. Default = no browser origin may read responses. The
+    // daemon decrypts PRIVATE repos for projection, so a wildcard ACAO would
+    // let any site the user visits exfiltrate private repo data from
+    // localhost. Operators add trusted SPA origins explicitly.
+    this.allowOrigin = new Set(
+      (Array.isArray(allowOrigin) ? allowOrigin : splitList(allowOrigin))
+        .map(s => String(s).trim()).filter(Boolean)
+    )
+    // Local capability token. Everything except GET /health + OPTIONS
+    // requires it (Authorization: Bearer <t> or ?token=<t>). Generated on
+    // start() if not pinned, persisted 0600 next to storage.
+    this.token = token || null
+    this.tokenPath = tokenPath || path.join(storage, '.daemon-token')
 
     this.forge = new OpengitForge({
       storage,
@@ -49,6 +73,7 @@ class OpengitDaemon {
   async start () {
     if (this.server) return this.address()
     await this.forge.ready()
+    this._ensureToken()
     this._startedAt = Date.now()
     this.server = http.createServer((req, res) => {
       this._handle(req, res).catch((err) => this._json(res, 500, { error: err.message }))
@@ -73,8 +98,46 @@ class OpengitDaemon {
     return {
       host: addr.address,
       port: addr.port,
-      url: `http://${addr.address}:${addr.port}`
+      url: `http://${addr.address}:${addr.port}`,
+      token: this.token,
+      tokenPath: this.tokenPath,
+      allowOrigin: [...this.allowOrigin]
     }
+  }
+
+  // Generate (if not pinned) and persist the capability token, 0600.
+  _ensureToken () {
+    if (!this.token) this.token = crypto.randomBytes(32).toString('hex')
+    try {
+      fs.mkdirSync(path.dirname(this.tokenPath), { recursive: true })
+      fs.writeFileSync(this.tokenPath, this.token + '\n', { mode: 0o600 })
+      fs.chmodSync(this.tokenPath, 0o600)
+    } catch { /* token still enforced in-memory even if it can't be persisted */ }
+  }
+
+  // Constant-time bearer/query token check. Never true when no token is set.
+  _authorized (req, url) {
+    if (!this.token) return false
+    let presented = null
+    const auth = req.headers && req.headers.authorization
+    if (auth && /^Bearer\s+/i.test(auth)) presented = auth.replace(/^Bearer\s+/i, '').trim()
+    if (!presented && url) presented = url.searchParams.get('token')
+    if (!presented) return false
+    const a = Buffer.from(String(presented))
+    const b = Buffer.from(this.token)
+    return a.length === b.length && crypto.timingSafeEqual(a, b)
+  }
+
+  // Reject non-loopback Host headers (anti-DNS-rebinding). The configured
+  // bind host is always allowed.
+  _hostAllowed (req) {
+    const raw = (req.headers && req.headers.host) || ''
+    const host = raw.replace(/:\d+$/, '').toLowerCase()
+    return LOOPBACK_HOSTS.has(host) || host === String(this.host).toLowerCase()
+  }
+
+  _originAllowed (origin) {
+    return !!origin && this.allowOrigin.has(origin)
   }
 
   async stop () {
@@ -92,25 +155,43 @@ class OpengitDaemon {
   }
 
   async _handle (req, res) {
+    const origin = req.headers && req.headers.origin
+    const cors = corsHeaders(this._originAllowed(origin) ? origin : null)
+
     if (req.method === 'OPTIONS') {
-      res.writeHead(204, corsHeaders())
+      res.writeHead(204, cors)
       res.end()
       return
     }
-    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
-    if (req.method === 'GET' && url.pathname === '/health') {
-      return this._json(res, 200, this.health())
+
+    // Anti-DNS-rebinding: only loopback Host headers are served.
+    if (!this._hostAllowed(req)) {
+      return this._json(res, 403, { error: 'forbidden host' }, cors)
     }
+
+    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
+
+    // Public, non-sensitive presence probe — no storage path / profile /
+    // repo data. Lets the SPA detect a daemon without exposing anything.
+    if (req.method === 'GET' && url.pathname === '/health') {
+      return this._json(res, 200, this.publicHealth(), cors)
+    }
+
+    // Everything below requires the local capability token.
+    if (!this._authorized(req, url)) {
+      return this._json(res, 401, { error: 'unauthorized: local daemon token required' }, cors)
+    }
+
     if (req.method === 'GET' && url.pathname === '/repos') {
       const limit = clampLimit(url.searchParams.get('limit'))
-      return this._json(res, 200, { repos: await this.listRepos({ limit }) })
+      return this._json(res, 200, { repos: await this.listRepos({ limit }) }, cors)
     }
     if (req.method === 'POST' && url.pathname === '/rpc') {
       const body = await readJson(req)
-      return this._json(res, 200, await this.rpc(body))
+      return this._json(res, 200, await this.rpc(body), cors)
     }
     if (req.method === 'POST' && url.pathname === '/shutdown') {
-      this._json(res, 202, { ok: true })
+      this._json(res, 202, { ok: true }, cors)
       setImmediate(() => this.stop().catch(() => {}))
       return
     }
@@ -119,16 +200,21 @@ class OpengitDaemon {
     if (req.method === 'GET' && parts[0] === 'repos' && parts[1]) {
       const key = decodeURIComponent(parts[1])
       const opts = queryOptions(url)
-      if (parts.length === 2) return this._json(res, 200, await this.repoSummary(key, opts))
-      if (parts[2] === 'refs') return this._json(res, 200, { refs: await this.repoRefs(key, opts) })
-      if (parts[2] === 'issues') return this._json(res, 200, { issues: await this.repoIssues(key, opts) })
-      if (parts[2] === 'prs') return this._json(res, 200, { prs: await this.repoPRs(key, opts) })
+      if (parts.length === 2) return this._json(res, 200, await this.repoSummary(key, opts), cors)
+      if (parts[2] === 'refs') return this._json(res, 200, { refs: await this.repoRefs(key, opts) }, cors)
+      if (parts[2] === 'issues') return this._json(res, 200, { issues: await this.repoIssues(key, opts) }, cors)
+      if (parts[2] === 'prs') return this._json(res, 200, { prs: await this.repoPRs(key, opts) }, cors)
     }
     if (req.method === 'POST' && parts[0] === 'repos' && parts[1] && parts[2] === 'close') {
-      return this._json(res, 200, await this.closeRepo(decodeURIComponent(parts[1])))
+      return this._json(res, 200, await this.closeRepo(decodeURIComponent(parts[1])), cors)
     }
 
-    this._json(res, 404, { error: 'not found' })
+    this._json(res, 404, { error: 'not found' }, cors)
+  }
+
+  // Minimal, non-sensitive — safe to serve unauthenticated to any origin.
+  publicHealth () {
+    return { ok: true, readOnly: true, uptimeMs: Date.now() - this._startedAt }
   }
 
   health () {
@@ -331,10 +417,10 @@ class OpengitDaemon {
     }
   }
 
-  _json (res, status, body) {
+  _json (res, status, body, cors = corsHeaders(null)) {
     const bytes = Buffer.from(JSON.stringify(body, null, 2))
     res.writeHead(status, {
-      ...corsHeaders(),
+      ...cors,
       'content-type': 'application/json; charset=utf-8',
       'content-length': bytes.length,
       'cache-control': 'no-store'
@@ -343,12 +429,17 @@ class OpengitDaemon {
   }
 }
 
-function corsHeaders () {
-  return {
-    'access-control-allow-origin': '*',
+// CORS is opt-in per request. `Access-Control-Allow-Origin` is emitted ONLY
+// when the caller's Origin is on the operator allowlist (echoed back, never
+// `*`). `Vary: Origin` so caches don't bleed a permitted origin to others.
+function corsHeaders (allowedOrigin) {
+  const h = {
+    'vary': 'Origin',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
-    'access-control-allow-headers': 'content-type'
+    'access-control-allow-headers': 'content-type, authorization'
   }
+  if (allowedOrigin) h['access-control-allow-origin'] = allowedOrigin
+  return h
 }
 
 function positiveInt (value, name) {
@@ -378,9 +469,19 @@ function queryOptions (url) {
   }
 }
 
+function splitList (value) {
+  if (value == null) return []
+  return String(value).split(',')
+}
+
 async function readJson (req) {
   const chunks = []
-  for await (const chunk of req) chunks.push(chunk)
+  let total = 0
+  for await (const chunk of req) {
+    total += chunk.length
+    if (total > MAX_BODY_BYTES) throw new Error('request body too large')
+    chunks.push(chunk)
+  }
   if (chunks.length === 0) return {}
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }

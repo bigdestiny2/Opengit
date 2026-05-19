@@ -34,7 +34,8 @@ async function main () {
     port: args.port,
     maxOpenRepos: args.maxOpenRepos,
     idleMs: args.idleMs,
-    projectionTtlMs: args.projectionTtlMs
+    projectionTtlMs: args.projectionTtlMs,
+    allowOrigin: args.allowOrigin
   })
   const addr = await daemon.start()
   process.stdout.write(`opengit-daemon listening on ${addr.url}\n`)
@@ -42,6 +43,10 @@ async function main () {
   process.stdout.write(`storage: ${storage}\n`)
   process.stdout.write(`max-open-repos: ${args.maxOpenRepos}\n`)
   process.stdout.write(`projection-ttl-ms: ${args.projectionTtlMs}\n`)
+  process.stdout.write(`token: ${addr.token}\n`)
+  process.stdout.write(`token-file: ${addr.tokenPath}\n`)
+  process.stdout.write(`allow-origin: ${addr.allowOrigin.length ? addr.allowOrigin.join(', ') : '(none — browser reads disabled; CLI/curl use the token)'}\n`)
+  process.stdout.write('all endpoints except GET /health require: Authorization: Bearer <token>\n')
   process.stdout.write('press ctrl-c to stop\n')
 
   const stop = async () => {
@@ -60,6 +65,7 @@ function parseArgs (raw) {
     maxOpenRepos: int(process.env.OPENGIT_DAEMON_MAX_OPEN_REPOS || '32', 'max-open-repos'),
     idleMs: int(process.env.OPENGIT_DAEMON_IDLE_MS || String(5 * 60 * 1000), 'idle-ms'),
     projectionTtlMs: int(process.env.OPENGIT_DAEMON_PROJECTION_TTL_MS || '1000', 'projection-ttl-ms'),
+    allowOrigin: process.env.OPENGIT_DAEMON_ALLOW_ORIGIN || null,
     profile: null,
     storage: null,
     help: false
@@ -74,6 +80,7 @@ function parseArgs (raw) {
     else if (a === '--max-open-repos') out.maxOpenRepos = int(raw[++i], 'max-open-repos')
     else if (a === '--idle-ms') out.idleMs = int(raw[++i], 'idle-ms')
     else if (a === '--projection-ttl-ms') out.projectionTtlMs = int(raw[++i], 'projection-ttl-ms')
+    else if (a === '--allow-origin') out.allowOrigin = raw[++i]
     else throw new Error(`unknown arg: ${a}`)
   }
   return out
@@ -91,17 +98,23 @@ function usage () {
 Usage:
   opengit-daemon [--host 127.0.0.1] [--port 8765] [--profile default]
                  [--storage <path>] [--max-open-repos 32] [--idle-ms 300000]
-                 [--projection-ttl-ms 1000]
+                 [--projection-ttl-ms 1000] [--allow-origin <o[,o...]>]
 
-Endpoints:
-  GET  /health
-  GET  /repos?limit=100
-  GET  /repos/<key>
-  GET  /repos/<key>/refs
-  GET  /repos/<key>/issues
-  GET  /repos/<key>/prs
-  POST /rpc
+Endpoints (read-only):
+  GET  /health                 public — presence probe only, no repo data
+  GET  /repos?limit=100        token required
+  GET  /repos/<key>            token required
+  GET  /repos/<key>/refs       token required
+  GET  /repos/<key>/issues     token required
+  GET  /repos/<key>/prs        token required
+  POST /rpc                    token required
 
-This daemon is read-only and binds to localhost by default.
+Security: binds to localhost; rejects non-loopback Host headers. The daemon
+decrypts PRIVATE repos for projection, so it is NOT open to browsers by
+default. Every endpoint except GET /health needs the per-start capability
+token (printed on start + written 0600 to <storage>/.daemon-token):
+  Authorization: Bearer <token>   (or ?token=<token>)
+Browser SPAs may read responses only from origins you allow explicitly via
+--allow-origin / OPENGIT_DAEMON_ALLOW_ORIGIN (no wildcard).
 `)
 }

@@ -183,7 +183,8 @@ async function cmdDaemon (args) {
     port: intFlag(process.env.OPENGIT_DAEMON_PORT || '8765', 'port'),
     maxOpenRepos: intFlag(process.env.OPENGIT_DAEMON_MAX_OPEN_REPOS || '32', 'max-open-repos'),
     idleMs: intFlag(process.env.OPENGIT_DAEMON_IDLE_MS || String(5 * 60 * 1000), 'idle-ms'),
-    projectionTtlMs: intFlag(process.env.OPENGIT_DAEMON_PROJECTION_TTL_MS || '1000', 'projection-ttl-ms')
+    projectionTtlMs: intFlag(process.env.OPENGIT_DAEMON_PROJECTION_TTL_MS || '1000', 'projection-ttl-ms'),
+    allowOrigin: process.env.OPENGIT_DAEMON_ALLOW_ORIGIN || null
   }
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
@@ -192,7 +193,8 @@ async function cmdDaemon (args) {
     else if (a === '--max-open-repos') flags.maxOpenRepos = intFlag(args[++i], 'max-open-repos')
     else if (a === '--idle-ms') flags.idleMs = intFlag(args[++i], 'idle-ms')
     else if (a === '--projection-ttl-ms') flags.projectionTtlMs = intFlag(args[++i], 'projection-ttl-ms')
-    else throw new Error(`usage: opengit daemon [--host 127.0.0.1] [--port 8765] [--max-open-repos 32] [--idle-ms 300000] [--projection-ttl-ms 1000]`)
+    else if (a === '--allow-origin') flags.allowOrigin = args[++i]
+    else throw new Error('usage: opengit daemon [--host 127.0.0.1] [--port 8765] [--max-open-repos 32] [--idle-ms 300000] [--projection-ttl-ms 1000] [--allow-origin <o[,o...]>]')
   }
 
   const daemon = new OpengitDaemon({
@@ -208,7 +210,10 @@ async function cmdDaemon (args) {
   process.stdout.write(`storage: ${STORAGE_DIR}\n`)
   process.stdout.write(`max-open-repos: ${flags.maxOpenRepos}\n`)
   process.stdout.write(`projection-ttl-ms: ${flags.projectionTtlMs}\n`)
-  process.stdout.write('endpoints: /health, /repos, /repos/<key>, /rpc\n')
+  process.stdout.write(`token: ${addr.token}\n`)
+  process.stdout.write(`token-file: ${addr.tokenPath}\n`)
+  process.stdout.write(`allow-origin: ${addr.allowOrigin && addr.allowOrigin.length ? addr.allowOrigin.join(', ') : '(none — browser reads disabled)'}\n`)
+  process.stdout.write('endpoints: GET /health (public); /repos, /repos/<key>, /rpc require Authorization: Bearer <token>\n')
   process.stdout.write('press ctrl-c to stop\n')
   const stop = async () => {
     process.stdout.write('\nstopping daemon\n')
@@ -1293,11 +1298,15 @@ Subcommands:
                                --private:      encrypted; content key in keyring
                                --multi-writer: refs governed by Autobase
   info <key|petname>           Show repo metadata.
-  daemon [--host <h>] [--port <n>]
-                               Run the local read/projection daemon. Exposes
-                               /health, /repos, /repos/<key> and /rpc on
-                               localhost by default with a bounded open-repo
-                               cache for scale.
+  daemon [--host <h>] [--port <n>] [--allow-origin <o[,o...]>]
+                               Run the local read-only projection daemon on
+                               localhost. GET /health is a public presence
+                               probe; /repos, /repos/<key>, /rpc require the
+                               per-start capability token (printed + written
+                               0600 to <storage>/.daemon-token). Browser reads
+                               are off unless --allow-origin lists a trusted
+                               SPA origin (no wildcard); rejects non-loopback
+                               Host headers.
   list-refs <key|petname|name> List refs.
   set-ref <name> <ref> <oid>   Set a ref (writable repos only).
   serve <key|petname|name> [--mirror <blind-peer-pubkey> ...]

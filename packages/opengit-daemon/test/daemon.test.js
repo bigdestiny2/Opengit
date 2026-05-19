@@ -82,34 +82,99 @@ test('daemon exposes local repo projections and bounded cache', async () => {
   }
 })
 
-test('daemon HTTP API exposes read-only CORS and preflight headers', async () => {
+test('daemon HTTP enforces token + origin allowlist + host pinning + body cap', async () => {
   const root = tmpdir()
   const oldHome = process.env.OPENGIT_HOME
   process.env.OPENGIT_HOME = path.join(root, 'home')
   const daemon = new OpengitDaemon({
     storage: path.join(root, 'storage'),
-    profileName: 'daemon-cors-test',
+    profileName: 'daemon-sec-test',
     identity: new OpengitIdentity(),
-    port: 0
+    port: 0,
+    allowOrigin: 'https://opengit.tech'
   })
+  // Simulate a started daemon without binding a socket/forge: the HTTP
+  // security gate (host/origin/token) runs before any repo work.
+  daemon.token = 'tkn-secret'
+  daemon._startedAt = Date.now()
 
   try {
-    const health = fakeResponse()
-    await daemon._handle({ method: 'GET', url: '/health', headers: { host: 'localhost' } }, health)
-    assert.equal(health.status, 200)
-    assert.equal(health.headers['access-control-allow-origin'], '*')
-    assert.equal(JSON.parse(health.body).readOnly, true)
+    // /health is public, but minimal — NO storage path / profile / counts.
+    const h = fakeResponse()
+    await daemon._handle({ method: 'GET', url: '/health', headers: { host: 'localhost' } }, h)
+    assert.equal(h.status, 200)
+    const hb = JSON.parse(h.body)
+    assert.equal(hb.readOnly, true)
+    assert.equal(hb.ok, true)
+    assert.equal('storage' in hb, false)
+    assert.equal('profile' in hb, false)
+    // No wildcard CORS, ever. Disallowed origin → no ACAO header.
+    assert.equal(h.headers['access-control-allow-origin'], undefined)
+    assert.equal(h.headers.vary, 'Origin')
 
-    const preflight = fakeResponse()
-    await daemon._handle({ method: 'OPTIONS', url: '/health', headers: { host: 'localhost' } }, preflight)
-    assert.equal(preflight.status, 204)
-    assert.equal(preflight.headers['access-control-allow-methods'], 'GET, POST, OPTIONS')
+    const evil = fakeResponse()
+    await daemon._handle({ method: 'GET', url: '/health', headers: { host: 'localhost', origin: 'https://evil.example' } }, evil)
+    assert.equal(evil.headers['access-control-allow-origin'], undefined)
+
+    // Allowlisted origin → echoed (never '*').
+    const ok = fakeResponse()
+    await daemon._handle({ method: 'GET', url: '/health', headers: { host: 'localhost', origin: 'https://opengit.tech' } }, ok)
+    assert.equal(ok.headers['access-control-allow-origin'], 'https://opengit.tech')
+
+    // Repo data without token → 401.
+    const noTok = fakeResponse()
+    await daemon._handle({ method: 'GET', url: '/repos', headers: { host: 'localhost' } }, noTok)
+    assert.equal(noTok.status, 401)
+
+    // Non-loopback Host (DNS-rebinding) → 403, even with a valid token.
+    const badHost = fakeResponse()
+    await daemon._handle({ method: 'GET', url: '/repos?token=tkn-secret', headers: { host: 'attacker.example' } }, badHost)
+    assert.equal(badHost.status, 403)
+
+    // Correct token, loopback host → auth passes (rpc:health needs no forge).
+    const authed = fakeResponse()
+    await daemon._handle(fakeReq('POST', '/rpc', { host: '127.0.0.1', authorization: 'Bearer tkn-secret' }, { method: 'health' }), authed)
+    assert.equal(authed.status, 200)
+    assert.equal(JSON.parse(authed.body).readOnly, true)
+
+    // Wrong token → 401.
+    const wrong = fakeResponse()
+    await daemon._handle(fakeReq('POST', '/rpc', { host: '127.0.0.1', authorization: 'Bearer nope' }, { method: 'health' }), wrong)
+    assert.equal(wrong.status, 401)
+
+    // Preflight: allowed origin echoed, methods advertised.
+    const pre = fakeResponse()
+    await daemon._handle({ method: 'OPTIONS', url: '/repos', headers: { host: 'localhost', origin: 'https://opengit.tech' } }, pre)
+    assert.equal(pre.status, 204)
+    assert.equal(pre.headers['access-control-allow-origin'], 'https://opengit.tech')
+    assert.equal(pre.headers['access-control-allow-methods'], 'GET, POST, OPTIONS')
+
+    // Oversized request body → rejected (memory-DoS guard).
+    const big = fakeResponse()
+    await assert.rejects(
+      daemon._handle(fakeReqRaw('POST', '/rpc', { host: '127.0.0.1', authorization: 'Bearer tkn-secret' },
+        [Buffer.alloc((1 << 20) + 1)]), big),
+      /request body too large/
+    )
   } finally {
     await daemon.stop()
     if (oldHome === undefined) delete process.env.OPENGIT_HOME
     else process.env.OPENGIT_HOME = oldHome
   }
 })
+
+function fakeReq (method, url, headers, jsonBody) {
+  return fakeReqRaw(method, url, headers, [Buffer.from(JSON.stringify(jsonBody))])
+}
+
+function fakeReqRaw (method, url, headers, chunks) {
+  return {
+    method,
+    url,
+    headers,
+    async * [Symbol.asyncIterator] () { for (const c of chunks) yield c }
+  }
+}
 
 function fakeResponse () {
   return {
