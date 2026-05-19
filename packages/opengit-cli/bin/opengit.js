@@ -37,6 +37,7 @@ const [subcommand, ...rest] = posargs
 const commands = {
   'init': cmdInit,
   'info': cmdInfo,
+  'daemon': cmdDaemon,
   'serve': cmdServe,
   'set-ref': cmdSetRef,
   'list-refs': cmdListRefs,
@@ -168,6 +169,55 @@ async function cmdInfo (args) {
       process.stdout.write(`${k}: ${JSON.stringify(v)}\n`)
     }
   })
+}
+
+async function cmdDaemon (args) {
+  let OpengitDaemon
+  try {
+    OpengitDaemon = require('opengit-daemon')
+  } catch (err) {
+    throw new Error('opengit daemon requires opengit-daemon in this workspace')
+  }
+  const flags = {
+    host: process.env.OPENGIT_DAEMON_HOST || '127.0.0.1',
+    port: intFlag(process.env.OPENGIT_DAEMON_PORT || '8765', 'port'),
+    maxOpenRepos: intFlag(process.env.OPENGIT_DAEMON_MAX_OPEN_REPOS || '32', 'max-open-repos'),
+    idleMs: intFlag(process.env.OPENGIT_DAEMON_IDLE_MS || String(5 * 60 * 1000), 'idle-ms'),
+    projectionTtlMs: intFlag(process.env.OPENGIT_DAEMON_PROJECTION_TTL_MS || '1000', 'projection-ttl-ms')
+  }
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--host') flags.host = args[++i]
+    else if (a === '--port') flags.port = intFlag(args[++i], 'port')
+    else if (a === '--max-open-repos') flags.maxOpenRepos = intFlag(args[++i], 'max-open-repos')
+    else if (a === '--idle-ms') flags.idleMs = intFlag(args[++i], 'idle-ms')
+    else if (a === '--projection-ttl-ms') flags.projectionTtlMs = intFlag(args[++i], 'projection-ttl-ms')
+    else throw new Error(`usage: opengit daemon [--host 127.0.0.1] [--port 8765] [--max-open-repos 32] [--idle-ms 300000] [--projection-ttl-ms 1000]`)
+  }
+
+  const daemon = new OpengitDaemon({
+    storage: STORAGE_DIR,
+    profileName: PROFILE,
+    identity: getIdentity(),
+    bootstrap: BOOTSTRAP,
+    ...flags
+  })
+  const addr = await daemon.start()
+  process.stdout.write(`opengit daemon listening on ${addr.url}\n`)
+  process.stdout.write(`profile: ${PROFILE}\n`)
+  process.stdout.write(`storage: ${STORAGE_DIR}\n`)
+  process.stdout.write(`max-open-repos: ${flags.maxOpenRepos}\n`)
+  process.stdout.write(`projection-ttl-ms: ${flags.projectionTtlMs}\n`)
+  process.stdout.write('endpoints: /health, /repos, /repos/<key>, /rpc\n')
+  process.stdout.write('press ctrl-c to stop\n')
+  const stop = async () => {
+    process.stdout.write('\nstopping daemon\n')
+    try { await daemon.stop() } catch {}
+    process.exit(0)
+  }
+  process.on('SIGINT', stop)
+  process.on('SIGTERM', stop)
+  await new Promise(() => {})
 }
 
 async function cmdServe (args) {
@@ -511,6 +561,12 @@ function decodeKeyToHex (key) {
   if (key.length === 64 && /^[0-9a-fA-F]+$/.test(key)) return key.toLowerCase()
   if (key.length === 52) return b4a.toString(z32.decode(key), 'hex')
   throw new Error(`unrecognized key format: ${key}`)
+}
+
+function intFlag (value, name) {
+  const n = Number(value)
+  if (!Number.isInteger(n) || n < 0) throw new Error(`${name} must be a non-negative integer`)
+  return n
 }
 
 async function cmdAddWriter (args) {
@@ -1237,6 +1293,11 @@ Subcommands:
                                --private:      encrypted; content key in keyring
                                --multi-writer: refs governed by Autobase
   info <key|petname>           Show repo metadata.
+  daemon [--host <h>] [--port <n>]
+                               Run the local read/projection daemon. Exposes
+                               /health, /repos, /repos/<key> and /rpc on
+                               localhost by default with a bounded open-repo
+                               cache for scale.
   list-refs <key|petname|name> List refs.
   set-ref <name> <ref> <oid>   Set a ref (writable repos only).
   serve <key|petname|name> [--mirror <blind-peer-pubkey> ...]
@@ -1304,6 +1365,7 @@ Environment:
   OPENGIT_PROFILE    profile name (default "default")
   OPENGIT_STORAGE    explicit storage path (overrides profile resolution)
   OPENGIT_BOOTSTRAP  comma-separated host:port list of DHT bootstraps
+  OPENGIT_DAEMON_*   daemon host/port/cache overrides
 
 Active state:
   profile:   ${PROFILE}

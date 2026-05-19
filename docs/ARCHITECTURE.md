@@ -56,7 +56,10 @@ An `OpengitRepo` is a set of named Hypercores in one Corestore namespace:
 
 For **private** repos, every core *except* `manifest` (and the plaintext
 bootstrap entries it needs) is per-block AEAD-encrypted with the repo's
-content key.
+content key. That includes the refs, issues, and PR Autobase namespaces; their
+input/system/view cores are encrypted, while the manifest-published bootstrap
+keys remain plaintext so invited collaborators can find the bases before they
+unwrap the content key.
 
 ### Why the manifest is the keystone (v0.0.11)
 
@@ -165,6 +168,26 @@ relay** pins its cores. `forge.setBlindPeerMirrors([pubkeys])` +
 the 5 repo cores alive — `opengit serve --mirror <pubkey>` wires this.
 Private-repo ciphertext broadcast is `publishToBlindRelay()` (the AGPL
 `--use-hiverelay` path). See [RELAY-OPERATORS.md](RELAY-OPERATORS.md).
+
+The wiring is implemented, but the release gate is still the real
+owner-offline proof: a relay operated outside the test harness must keep the
+canonical repo cloneable while the owner is offline, reproduced twice.
+
+## Known gaps
+
+- **`opengit daemon`** — one-shot CLI mutations are local-only; cross-party
+  writes currently need the long-running `opengit collab` process.
+- **Local projections** — issue/PR views exist, but there is no SQLite-style
+  materialized projection for rich queries and rebuildable UI state.
+- **Moderation/spam** — owner/moderator authority exists; signed auditable
+  moderation ops and default-hidden untrusted content still need hardening.
+- **Multi-writer refs** — old opt-in support exists, but shared-branch push is
+  not live-proven and should be rebuilt on the manifest+admit pattern.
+- **Pack object reads** — the shipped data path lets stock git decode a
+  regenerated shadow repo; direct per-OID Hyperblobs reads remain future work.
+- **Release engineering and scale** — npm/Pear release discipline, migrations,
+  large-repo performance, NAT/relay success rates, and relay storage economics
+  still need measured requirements.
 
 ## Decentralization invariants (enforced, not aspirational)
 

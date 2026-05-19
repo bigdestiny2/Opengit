@@ -17,6 +17,9 @@ what's next.
   enabler shipped.
 - Cross-party issues/PRs (`opengit collab`), private-repo cold-bootstrap,
   identity (mnemonic-rooted), the 8 pre-flight bug fixes.
+- **Private-repo issue/PR encryption.** Collaboration Autobases for refs,
+  issues, and PRs are opened with the repo content key in private repos; the
+  encryption test covers this explicitly.
 
 ## ▶ Next: Stage 5 — self-host (drop GitHub)
 
@@ -55,15 +58,19 @@ repo available across an owner-offline window, reproduced twice.
   proven path (git data uses single-writer manifest refs; collaboration uses
   fork→PR). Apply the proven manifest+admit pattern if/when shared-branch
   push is wanted.
-- **Private-repo issue-core encryption.** Issues/PR Autobase content for
-  private repos is a separate hardening item.
 - **Stages 2/3 (cross-NAT / HiveRelay owner-offline)** not yet exercised
   live; expected to be NAT-dependent — jump to relay, don't debug NAT live.
 - **Standalone `git clone opengit://` over the real DHT** — a separate tick
   from the forge-loop proof; do it while a peer is online (see
   [../STAGE-4-LIVE-RESULT.md](../STAGE-4-LIVE-RESULT.md) open ticks).
+- **Pack object reads.** The supported git path uses the shadow bare repo and
+  stock git to read packs. Direct per-OID reads from Hyperblobs /
+  `object-index` remain future indexer/browser optimization work.
 - **Release engineering.** Package version is still `0.0.1`; versioning,
   changelog, and `pear://` distribution are open.
+- **Scale requirements.** Define and measure targets for large repos,
+  projection rebuild time, relay storage, DHT/NAT success rates, and spam
+  pressure. Today the project has proofs, not scale SLOs.
 
 ### From the competitive-landscape research ([COMPETITIVE-LANDSCAPE.md](COMPETITIVE-LANDSCAPE.md))
 

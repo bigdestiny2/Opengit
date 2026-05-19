@@ -241,6 +241,10 @@ collaborators discover the encrypted cores' keys without the content key, then
 unwrap the content key from the meta-keys core. See
 [ARCHITECTURE.md](ARCHITECTURE.md) §Manifest.
 
+For private repos, the encrypted boundary includes the collaboration data:
+refs, issues, and PR Autobase cores are opened with the repo content key.
+Only the manifest and wrapped-key bootstrap records are plaintext.
+
 ## 8. Availability (owner-offline)
 
 Without an always-on node, a repo is reachable only while the owner (or a
@@ -254,6 +258,11 @@ peer/relay) is online. Options:
   encrypted) — long-running pinning processes you or someone you trust runs.
 
 See [RELAY-OPERATORS.md](RELAY-OPERATORS.md).
+
+Current status: relay wiring and preflight exist, but owner-offline
+availability is still a release gate. Treat it as proven only after a real
+blind-peer/HiveRelay operator keeps a fresh clone working while the owner is
+offline, reproduced twice.
 
 ## 9. Petnames & profiles
 
@@ -292,3 +301,14 @@ global registry to capture or squat.
 
 Deeper context for any of these: the [TESTING.md](../TESTING.md) failure
 playbook.
+
+## 12. Current limits
+
+- One-shot `opengit issue` / `opengit pr` commands are local-only; use
+  `opengit collab` for cross-party exchange until `opengit daemon` exists.
+- Shared-branch multi-writer refs are not a supported live path; use fork → PR.
+- Rich issue/PR search needs a future local projection layer.
+- Public untrusted use still needs stronger signed moderation/spam controls.
+- The helper reads git data through the shadow bare repo; direct pack-object
+  reads are future browser/indexer work.
+- Release packaging and large-scale performance targets are not complete yet.

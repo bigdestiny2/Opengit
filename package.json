@@ -15,9 +15,14 @@
     "preview:app": "node scripts/preview-webapp.js",
     "preview:serve": "node scripts/serve-local.js --dir .preview --port 8088",
     "preview": "node scripts/build-site.js && node scripts/preview-webapp.js && node scripts/serve-local.js --dir .preview --port 8088",
+    "daemon": "node packages/opengit-daemon/bin/opengit-daemon.js",
     "forge": "node scripts/build-forge.js",
     "forge:serve": "node scripts/build-forge.js && node scripts/serve-local.js --dir dist --port 8090",
     "forge:hyper": "node scripts/publish-site.js --dir dist",
+    "scale": "node scripts/scale-experiment.js",
+    "scale:smoke": "node scripts/scale-experiment.js --repos 5 --refs 2 --issues 2 --comments 1 --prs 1 --compact --max-per-repo-list-ms 25",
+    "soak:owner-offline": "node scripts/owner-offline-relay-soak.js",
+    "soak:owner-offline:smoke": "node scripts/owner-offline-relay-soak.js --iterations 2 --quiet --compact --max-total-ms 10000",
     "deploy:cf": "node scripts/build-forge.js && npx --yes wrangler@latest pages deploy dist --project-name opengit-forge --commit-dirty=true"
   },
   "engines": {

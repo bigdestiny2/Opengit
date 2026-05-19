@@ -119,6 +119,18 @@ class MultiWriterRefs {
     return this.append(payload)
   }
 
+  async deleteRef (ref, identity) {
+    if (!identity) throw new Error('deleteRef requires an identity')
+    const payload = {
+      type: 'ref-del',
+      ref,
+      by: b4a.toString(identity.publicKey, 'hex'),
+      at: Date.now()
+    }
+    this._sign(payload, identity)
+    return this.append(payload)
+  }
+
   async addWriter (pubkey, identity) {
     if (!identity) throw new Error('addWriter requires an identity')
     const payload = {

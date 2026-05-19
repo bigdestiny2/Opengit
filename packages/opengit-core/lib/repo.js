@@ -469,7 +469,8 @@ class OpengitRepo {
   async deleteRef (ref) {
     await this.ready()
     if (this.multiwriter && this.multiRefs) {
-      throw new Error('multi-writer deleteRef not yet implemented in v0.0.4')
+      if (!this.identity) throw new Error('multi-writer deleteRef requires an identity')
+      return this.multiRefs.deleteRef(ref, this.identity)
     }
     if (!this.writable) throw new Error('cannot deleteRef: repo not writable')
     await this.refs.del(ref)

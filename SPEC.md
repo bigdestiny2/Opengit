@@ -2,7 +2,13 @@
 
 > A fully open-source, P2P-native code forge built on the Pear/Bare/Holepunch stack. Designed to replace the operational and social layers GitHub provides, while remaining compatible with the unmodified `git` CLI.
 
-**Status:** Draft v0.1. Greenfield — nothing implemented yet.
+**Status:** Living draft v0.1. Substantial implementation exists through the
+v0.0.12 security/collaboration work: stock-`git` clone/push via the remote
+helper, private-repo encryption + wrapped invites, manifest-based
+cold-bootstrap, signed issues/PRs, the cross-party `opengit collab` loop,
+pages rendering, indexer scaffolding, and relay/mirror wiring are implemented.
+The remaining gaps are called out explicitly in §14–§15 and the version
+deltas; this document is no longer a greenfield proposal.
 
 ---
 
@@ -280,10 +286,19 @@ Sharing with collaborators is **out-of-band in v0.0.2** (sneakernet, encrypted m
 | `ns:objects` (private repo) | Yes | Pack/blob bytes encrypted. |
 | `ns:object-index` (private repo) | Yes | Encrypts oid → blob mapping. |
 | `ns:meta` (private repo) | Yes | Even repo name leaks. |
+| `ns:refs-inputs` / refs Autobase (private repo) | Yes | Shared-branch ref ops leak branch names/OIDs. |
+| `ns:issues-inputs` / issues Autobase (private repo) | Yes | Private issue content may include secrets. |
+| `ns:prs-inputs` / PR Autobase (private repo) | Yes | Private PR discussions and branch metadata may include secrets. |
 | **Discovery key** | No (by definition) | The thing the DHT advertises. Always public; that's its job. |
 | **Per-block public-write signatures** | No | Hypercore's writer-auth signature is metadata; needed by replicators. |
 
 **Public-repo cores are unencrypted** — the encryption parameter is omitted, and Hypercore reads/writes plaintext. This is by design; public repos are advertised content.
+
+Implementation note (v0.0.12): private repos open the refs, issues, and PR
+Autobases on per-Autobase Corestore namespaces with the repo content key, so
+their input/system/view cores are AEAD-encrypted as part of the same private
+repo boundary. This is covered by `packages/opengit-core/test/encryption.test.js`
+(`private repo: collaboration Autobases are encrypted with the content key`).
 
 #### 3.7.4 Backwards compatibility
 
@@ -911,16 +926,43 @@ Every rendered page includes `<link rel="alternate" type="application/opengit" h
 
 ---
 
-## 14. MVP Scope (v0.1)
+## 14. Current Scope And Remaining Gaps (v0.1)
 
-The smallest thing that demonstrates the thesis works:
+The original MVP thesis has been proven in pieces, including stock-`git`
+clone/push, private-repo cold-bootstrap, and a live two-machine signed
+issue/PR loop. The project is still not release-complete. The remaining
+implementation gaps are:
 
-1. **`opengit-core`** Bare lib: Corestore-backed `OpengitRepo` with refs Hyperbee + objects Hyperblobs. Single-writer.
-2. **`git-remote-opengit`**: clone, fetch, push. Stock git compatibility.
-3. **`opengit-relay`**: HiveRelay-based pinning relay, single binary.
-4. **Demo flow**: User A creates repo on laptop, authorizes a relay, pushes initial commits, closes laptop. User B clones from the relay, pushes a branch (after A authorizes them), reopens laptop, pulls B's branch.
+1. **`opengit daemon`.** One-shot `opengit issue`/`pr` are local-only today;
+   cross-party work uses the long-running `opengit collab` process. A daemon
+   that owns the Corestore and serves one-shot CLI/git/relay clients is needed
+   for normal forge ergonomics.
+2. **Owner-offline relay proof.** Blind-peer/HiveRelay wiring and preflight
+   exist, but the real operator-side run must still prove a fresh clone while
+   the owner is offline, reproduced twice.
+3. **Multi-writer refs.** The old opt-in Autobase refs path exists, but it is
+   not on a live-proven path. Git data currently uses owner single-writer refs
+   plus fork→PR. Shared-branch push needs the manifest+admit pattern before it
+   should be treated as supported.
+4. **Local projections.** Issues/PRs are folded into Hyperbee views, but there
+   is no durable SQLite-style projection for rich queries, search, labels,
+   cross-refs, and rebuildable UI state.
+5. **Moderation/spam hardening.** Owners/moderators gate canonical state, but
+   public permissionless append logs need signed, auditable moderation ops and
+   default-hidden untrusted content before untrusted drive-by use.
+6. **Pack object reads.** The working git path regenerates a shadow bare repo
+   and lets stock git decode packs. Direct per-OID reads from Hyperblobs /
+   `object-index` remain future indexer/browser optimization work.
+7. **Release engineering.** Package versioning, changelog discipline,
+   published npm/Pear artifacts, and upgrade/migration policy are not done.
+8. **Scale requirements.** NAT/relay behavior, large-repo performance,
+   projection rebuild costs, spam pressure, and relay storage economics need
+   measured targets rather than assumptions.
 
-Out of MVP: identity feeds, issues, PRs, indexers, CI, Pages, releases, Pear UI. Those are v0.2–v1.0.
+Historical note: the original v0.1 MVP list was `opengit-core`,
+`git-remote-opengit`, relay pinning, and a two-user demo flow. Those pieces are
+now partially implemented/proven, but not yet packaged as a release-quality
+product.
 
 ---
 
@@ -955,6 +997,26 @@ Out of MVP: identity feeds, issues, PRs, indexers, CI, Pages, releases, Pear UI.
 ---
 
 ## 17. Version deltas
+
+### v0.0.12 — live forge loop + private collaboration hardening
+
+Added/proven:
+- Cross-party issues/PRs now use manifest-published Autobase bootstrap keys
+  and owner-signed admission, so a contributor and maintainer share the same
+  issue/PR bases instead of writing isolated silos.
+- Private repos encrypt collaboration Autobases with the repo content key.
+  This covers issue/PR input, system, and view cores for private repos, not
+  just refs/objects/meta.
+- `opengit collab` provides the live two-party handshake: contributor
+  publishes public input-core keys, maintainer admits them, and signed
+  issues/PRs linearize on both replicas.
+- Live two-machine Stage 4 passed on 2026-05-18: a signed issue and a merged
+  PR crossed between physical machines over the real Hyperswarm DHT.
+
+Still not done:
+- `opengit daemon`, real owner-offline relay proof, local projections,
+  moderation/spam hardening, shared-branch multi-writer refs, direct pack
+  object reads, release engineering, and measured scale targets.
 
 ### v0.0.11 (this revision) — A1: the manifest-core redesign
 
