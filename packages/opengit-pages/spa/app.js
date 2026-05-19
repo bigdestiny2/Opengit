@@ -11,6 +11,8 @@
   var CURKEY = null   // current repo z32
   var TREE = {}       // key|safeBranch -> {entries,map}
   var SHELL = false    // shell built?
+  var DAEMON = { checked: false, ok: false, url: 'http://127.0.0.1:8765', health: null }
+  var PAL = { open: false, items: [] }
 
   // ── theme ───────────────────────────────────────────────────────────────
   function initTheme () {
@@ -67,6 +69,35 @@
     return d ? (rel(d) || fmt(d)) : ''
   }
   function cloneUrl (r) { return 'opengit://' + (r.repoKeyZ32 || r.key || '') }
+  function searchParts (raw) {
+    var scopes = [], words = []
+    String(raw || '').trim().split(/\s+/).filter(Boolean).forEach(function (part) {
+      var m = part.match(/^(repo|file|issue|pr|branch):(.*)$/i)
+      if (m) {
+        scopes.push(m[1].toLowerCase())
+        if (m[2]) words.push(m[2])
+      } else words.push(part)
+    })
+    return { raw: String(raw || '').trim(), text: words.join(' ').toLowerCase(), scopes: scopes.length ? scopes : null }
+  }
+  function wants (p, scope) { return !p.scopes || p.scopes.indexOf(scope) > -1 }
+  function matches (p, text) {
+    var q = p.text
+    return !q || String(text || '').toLowerCase().indexOf(q) > -1
+  }
+  function copyValue (v, done) {
+    done = done || function () {}
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(v).then(done, done)
+    try {
+      var ta = document.createElement('textarea')
+      ta.value = v
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      ta.remove()
+      done()
+    } catch (x) {}
+  }
   function cliRows (rows) {
     return '<div class="clirows">' + rows.map(function (v) {
       return '<div class="clone-row"><code>' + esc(v) + '</code><button class="copy" type="button" data-c="' + esc(v) + '" aria-label="Copy command">copy</button></div>'
@@ -151,6 +182,107 @@
     }).join('\n') + '</pre>'
   }
 
+  // ── local daemon / command palette ─────────────────────────────────────
+  function updateSession () {
+    var box = byId('session'), mode = byId('session-mode'), state = byId('session-state')
+    if (!box || !mode || !state) return
+    box.classList.toggle('daemon', DAEMON.ok)
+    mode.textContent = DAEMON.ok ? 'daemon connected' : 'viewer session'
+    state.textContent = DAEMON.ok ? 'read-only api' : 'read-only'
+    box.title = DAEMON.ok
+      ? 'Connected to the local read-only opengit daemon at ' + DAEMON.url + '.'
+      : 'This page is a static snapshot. Browsing, search, and copy actions happen locally.'
+  }
+  function checkDaemon () {
+    if (DAEMON.checked) return
+    DAEMON.checked = true
+    var ctrl = window.AbortController ? new AbortController() : null
+    var opts = ctrl ? { signal: ctrl.signal } : {}
+    var t = setTimeout(function () { if (ctrl) ctrl.abort() }, 650)
+    Promise.race([
+      fetch(DAEMON.url + '/health', opts),
+      new Promise(function (_, reject) { setTimeout(function () { reject(new Error('daemon probe timeout')) }, 650) })
+    ]).then(function (r) {
+      if (!r.ok) throw new Error('daemon unavailable')
+      return r.json()
+    }).then(function (h) {
+      DAEMON.ok = h && h.ok === true
+      DAEMON.health = h || null
+      updateSession()
+    }).catch(updateSession).then(function () { clearTimeout(t) })
+  }
+  function ensurePalette () {
+    if (byId('pal')) return
+    document.body.appendChild(h('<div id="pal" class="palette" hidden role="dialog" aria-modal="true" aria-label="Command palette">' +
+      '<div class="palbox"><input id="palq" class="palinput" autocomplete="off" aria-label="Command palette search" placeholder="Jump to repositories, files, issues, pull requests">' +
+      '<div id="palres" class="palres" role="listbox"></div></div></div>'))
+    byId('pal').addEventListener('click', function (e) { if (e.target === byId('pal')) closePalette() })
+    byId('palq').addEventListener('input', renderPalette)
+    byId('palres').addEventListener('click', function (e) {
+      var row = e.target.closest && e.target.closest('[data-pali]')
+      if (!row) return
+      activatePaletteItem(Number(row.getAttribute('data-pali')))
+    })
+  }
+  function paletteItems (raw) {
+    var p = searchParts(raw)
+    var items = []
+    function add (scope, label, detail, href, copy) {
+      if (!wants(p, scope) || !matches(p, label + ' ' + (detail || ''))) return
+      items.push({ scope: scope, label: label, detail: detail || scope, href: href, copy: copy })
+    }
+    if (REPO && CURKEY) {
+      add('repo', 'Overview', REPO.name, rurl('/'))
+      add('file', 'Browse files', defaultBranch(), rurl('/files/' + encodeURIComponent(defaultBranch()) + '/'))
+      add('repo', 'Commits', defaultBranch(), rurl('/commits/' + encodeURIComponent(defaultBranch())))
+      add('issue', 'Issues', REPO.name, rurl('/issues'))
+      add('pr', 'Pull Requests', REPO.name, rurl('/prs'))
+      add('repo', 'Copy clone command', cloneUrl(REPO), null, 'git clone ' + cloneUrl(REPO))
+      ;(REPO.branches || []).forEach(function (b) {
+        add('branch', b.name, 'branch', rurl('/files/' + encodeURIComponent(b.name) + '/'))
+      })
+      var cached = TREE[CURKEY + '|' + safeBranch(defaultBranch())]
+      if (cached) cached.entries.filter(function (e) { return e.type !== 'tree' }).slice(0, 80).forEach(function (e) {
+        add('file', e.path, 'file', rurl('/files/' + encodeURIComponent(defaultBranch()) + '/' + encodeURI(e.path)))
+      })
+      if (p.raw) add('repo', 'Search snapshot for "' + p.raw + '"', 'search', rurl('/search?q=' + encodeURIComponent(p.raw)))
+    } else {
+      ;(INDEX && INDEX.repos || []).forEach(function (r) {
+        add('repo', r.name, r.description || 'repository', '#/r/' + encodeURIComponent(r.key) + '/')
+      })
+    }
+    return items.slice(0, 18)
+  }
+  function renderPalette () {
+    var q = byId('palq'), out = byId('palres')
+    if (!q || !out) return
+    PAL.items = paletteItems(q.value)
+    out.innerHTML = PAL.items.length ? PAL.items.map(function (it, i) {
+      return '<button type="button" class="palitem" data-pali="' + i + '" role="option">' +
+        '<span><strong>' + esc(it.label) + '</strong><em>' + esc(it.detail) + '</em></span><span class="paltype">' + esc(it.copy ? 'copy' : it.scope) + '</span></button>'
+    }).join('') : '<div class="palempty">No matches</div>'
+  }
+  function openPalette () {
+    ensurePalette()
+    PAL.open = true
+    byId('pal').hidden = false
+    byId('palq').value = ''
+    renderPalette()
+    setTimeout(function () { byId('palq').focus() }, 0)
+  }
+  function closePalette () {
+    var pal = byId('pal')
+    PAL.open = false
+    if (pal) pal.hidden = true
+  }
+  function activatePaletteItem (idx) {
+    var it = PAL.items[idx]
+    if (!it) return
+    if (it.copy) copyValue(it.copy)
+    closePalette()
+    if (it.href) location.hash = it.href.replace(/^#/, '')
+  }
+
   // ── persistent shell (built once; only #ctx + #main change per route) ───
   function renderShell () {
     if (SHELL) return
@@ -162,9 +294,10 @@
       '<header class="top"><div class="row">' +
         '<a class="brand" href="#/"><span class="g">⌬</span> ' + esc(INDEX && INDEX.count === 1 ? INDEX.repos[0].name : 'opengit') + '</a>' +
         '<div id="ctx"></div>' +
-        '<div class="session" title="This page is a static snapshot. Browsing, search, and copy actions happen locally.">' +
-          '<span class="dot"></span><span>viewer session</span><span>read-only</span>' +
+        '<div id="session" class="session" title="This page is a static snapshot. Browsing, search, and copy actions happen locally.">' +
+          '<span class="dot"></span><span id="session-mode">viewer session</span><span id="session-state">read-only</span>' +
         '</div>' +
+        '<button id="palbtn" class="keybtn" type="button" aria-label="Open command palette">⌘K</button>' +
         '<form class="search" id="sf" role="search"><input id="sq" aria-label="Search" placeholder="search…" autocomplete="off"></form>' +
         '<button id="themebtn" class="iconbtn" aria-label="Toggle theme"></button>' +
       '</div></header>' +
@@ -177,19 +310,33 @@
     var tb = byId('themebtn')
     tb.textContent = document.documentElement.getAttribute('data-theme') === 'light' ? '☾' : '☀'
     tb.onclick = toggleTheme
-    byId('sf').onsubmit = function (e) { e.preventDefault(); location.hash = '#/search?q=' + encodeURIComponent(byId('sq').value) }
+    function submitSearch (e) {
+      if (e) e.preventDefault()
+      location.hash = REPO && CURKEY ? rurl('/search?q=' + encodeURIComponent(byId('sq').value)) : '#/search?q=' + encodeURIComponent(byId('sq').value)
+    }
+    byId('sf').addEventListener('submit', submitSearch)
+    byId('sq').addEventListener('keydown', function (e) {
+      if (String(e.key || '').toLowerCase() === 'enter') submitSearch(e)
+    })
+    byId('palbtn').onclick = openPalette
+    document.addEventListener('keydown', function (e) {
+      var key = String(e.key || '').toLowerCase()
+      if ((e.metaKey || e.ctrlKey) && key === 'k') { e.preventDefault(); openPalette(); return }
+      if (PAL.open && key === 'escape') { e.preventDefault(); closePalette(); return }
+      if (PAL.open && key === 'enter') { e.preventDefault(); activatePaletteItem(0) }
+    })
     // delegated copy buttons (clone panel etc.)
-    byId('main').addEventListener('click', function (e) {
+    document.addEventListener('click', function (e) {
       var b = e.target.closest && e.target.closest('button.copy')
       if (!b) return
       e.preventDefault()
       e.stopPropagation()
       var v = b.getAttribute('data-c') || ''
       var done = function () { var o = b.textContent; b.textContent = 'copied ✓'; setTimeout(function () { b.textContent = o }, 1400) }
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(done, done)
-      else { try { var ta = document.createElement('textarea'); ta.value = v; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); done() } catch (x) {} }
+      copyValue(v, done)
     })
     SHELL = true
+    checkDaemon()
   }
   function setCtx (active) {
     var inRepo = !!REPO
@@ -216,7 +363,7 @@
       (br.length > 1 ? '<select id="brsel" aria-label="Branch">' + opts + '</select>' : '')
     var sel = byId('brsel')
     if (sel) sel.onchange = function () { location.hash = rurl('/files/' + encodeURIComponent(sel.value) + '/') }
-    var sq = byId('sq'); if (sq) sq.placeholder = inRepo ? 'search files, issues, pull requests' : 'search repository names and descriptions'
+    var sq = byId('sq'); if (sq) sq.placeholder = inRepo ? 'search file:, issue:, pr:, branch:' : 'search repo:'
   }
   function chrome (active) { renderShell(); setCtx(active) }
   function currentBranch () {
@@ -301,6 +448,37 @@
       '<a href="https://github.com/bigdestiny2/Opengit#60-second-quickstart">setup</a>. ' +
       'Or browse it here, offline, in <a href="https://github.com/bigdestiny2/PearBrowser">PearBrowser</a>.</p></div>'
   }
+  function dashMetric (label, value, detail, href) {
+    var body = '<div class="metric"><span>' + esc(label) + '</span><strong>' + esc(value == null ? '0' : value) + '</strong><em>' + esc(detail || '') + '</em></div>'
+    return href ? '<a class="metriclink" href="' + href + '">' + body + '</a>' : body
+  }
+  function hydrateDashboard (branch) {
+    var el = byId('dash')
+    if (!el) return
+    var sb = safeBranch(branch)
+    Promise.all([
+      getJSON(base() + 'api/commits/' + sb + '.json').catch(function () { return { commits: [] } }),
+      getJSON(base() + 'api/tree/' + sb + '.json').catch(function () { return { entries: [] } }),
+      getJSON(base() + 'api/issues.json').catch(function () { return [] }),
+      getJSON(base() + 'api/prs.json').catch(function () { return [] })
+    ]).then(function (all) {
+      var commits = all[0].commits || []
+      var files = (all[1].entries || []).filter(function (e) { return e.type !== 'tree' })
+      var issues = all[2] || []
+      var prs = all[3] || []
+      var openIssues = issues.filter(function (i) { return (i.state || 'open') === 'open' }).length
+      var openPRs = prs.filter(function (p) { return (p.state || 'open') === 'open' }).length
+      el.innerHTML =
+        dashMetric('branches', (REPO.branches || []).length, 'default ' + branch, null) +
+        dashMetric('commits', commits.length, commits[0] ? (rel(commits[0].date) || fmt(commits[0].date)) : 'no rendered history', rurl('/commits/' + encodeURIComponent(branch))) +
+        dashMetric('files', files.length, 'rendered on ' + branch, rurl('/files/' + encodeURIComponent(branch) + '/')) +
+        dashMetric('issues', openIssues + '/' + issues.length, 'open / total', rurl('/issues')) +
+        dashMetric('pull requests', openPRs + '/' + prs.length, 'open / total', rurl('/prs')) +
+        dashMetric('snapshot', REPO.generatedAt ? (rel(REPO.generatedAt) || fmt(REPO.generatedAt)) : 'unknown', 'static bundle', null)
+    }).catch(function () {
+      el.innerHTML = dashMetric('snapshot', 'metadata unavailable', 'try cloning for live state', null)
+    })
+  }
   function vOverview () {
     chrome('code')
     var b = REPO.branches.find(function (x) { return x.name === REPO.defaultBranch }) || REPO.branches[0]
@@ -308,6 +486,7 @@
       (REPO.description ? '<p class="repo-desc">' + esc(REPO.description) + '</p>' : '') +
       clonePanel() +
       snapshotNotice(b ? b.name : defaultBranch()) +
+      '<div id="dash" class="dash">' + skeleton(3) + '</div>' +
       '<div class="refbar"><a class="btn" href="' + rurl('/files/' + encodeURIComponent(b ? b.name : 'main') + '/') + '">Browse files →</a>' +
       ' <a class="btn" href="' + rurl('/commits/' + encodeURIComponent(b ? b.name : 'main')) + '">Commits</a>' +
       ' <a class="btn" href="#/">← all repos</a>' +
@@ -315,6 +494,7 @@
       ' · ' + (REPO.tags ? REPO.tags.length : 0) + ' tags' +
       (REPO.generatedAt ? ' · snapshot ' + (rel(REPO.generatedAt) || fmt(REPO.generatedAt)) : '') + '</span></div>'
     setMain(h('<div class="wrap">' + head + '<div id="rm">' + skeleton(4) + '</div></div>'))
+    hydrateDashboard(b ? b.name : defaultBranch())
     if (!b) { byId('rm').innerHTML = ''; return }
     getText(base() + 'raw/' + safeBranch(b.name) + '/README.md').then(function (t) {
       byId('rm').innerHTML = '<div class="readme">' + md(t) + '</div>'
@@ -415,9 +595,18 @@
       }).join('')
     }).catch(function () { byId('ls').innerHTML = emptyBox('No ' + kind + ' data', 'The collaboration index was not included when this read-only snapshot was published.', ['git clone ' + cloneUrl(REPO)]) })
   }
-  function note (who, when, bodyHtml, sig) {
-    return '<div class="note"><div class="nh"><span class="who">' + esc(short(who)) + '</span><span class="muted mono">' + esc(when) + '</span></div>' +
-      '<div class="nb">' + bodyHtml + '</div>' + (sig ? '<div class="sig">ed25519 ✓ ' + esc(short(sig)) + '…</div>' : '') + '</div>'
+  function eventLabel (type) {
+    return String(type || 'comment').replace(/^(issue|pr)\./, '').replace(/_/g, ' ')
+  }
+  function verifiedBadge (sig) {
+    return sig ? '<span class="verified" title="Signed event">verified <span>' + esc(short(sig)) + '</span></span>' : ''
+  }
+  function note (opts) {
+    opts = opts || {}
+    var label = eventLabel(opts.label || 'comment')
+    return '<div class="note"><div class="nh"><span class="etype">' + esc(label) + '</span><span class="who">' + esc(short(opts.who)) + '</span>' +
+      '<span class="muted mono">' + esc(opts.when || '') + '</span>' + verifiedBadge(opts.sig) + '</div>' +
+      '<div class="nb">' + (opts.bodyHtml || '<span class="dim">(empty)</span>') + '</div></div>'
   }
   function prDiffHtml (diff) {
     if (!diff) return ''
@@ -443,39 +632,69 @@
       var hdr = '<a class="btn" href="' + rurl('/' + (kind === 'issue' ? 'issues' : 'prs')) + '">← ' + (kind === 'issue' ? 'issues' : 'pull requests') + '</a>' +
         '<h1>' + esc(it.title) + ' ' + stateBadge(it.state || 'open') + '</h1>' +
         (kind === 'pr' ? '<div class="cmeta">' + esc(it.fromRepo ? short(it.fromRepo) + ':' + (it.fromRef || '') + ' → ' + (it.toRef || '') : '') + '</div>' : '')
-      var thread = note(it.by || it.author || it.openedBy, rel(it.at || it.openedAt) || fmt(it.at || it.openedAt), md(it.body || '') || '<span class="dim">(no description)</span>', it.sig)
+      var thread = note({
+        label: 'opened',
+        who: it.by || it.author || it.openedBy,
+        when: rel(it.at || it.openedAt) || fmt(it.at || it.openedAt),
+        bodyHtml: md(it.body || '') || '<span class="dim">(no description)</span>',
+        sig: it.sig
+      })
       ev.forEach(function (e) {
         if (e.type && /open$/.test(e.type)) return
-        var label = e.type ? e.type.replace(/^(issue|pr)\./, '') : 'comment'
-        thread += note(e.by, rel(e.at) || fmt(e.at), e.body ? md(e.body) : '<span class="dim">— ' + esc(label) + (e.reason ? ': ' + esc(e.reason) : '') + (e.verdict ? ': ' + esc(e.verdict) : '') + '</span>', e.sig)
+        var label = eventLabel(e.type)
+        thread += note({
+          label: label,
+          who: e.by,
+          when: rel(e.at) || fmt(e.at),
+          bodyHtml: e.body ? md(e.body) : '<span class="dim">' + esc(label) + (e.reason ? ': ' + esc(e.reason) : '') + (e.verdict ? ': ' + esc(e.verdict) : '') + '</span>',
+          sig: e.sig
+        })
       })
       byId('th').innerHTML = hdr + '<div class="thread">' + thread + '</div>' + (kind === 'pr' ? prDiffHtml(d.diff) : '')
     }).catch(function () { byId('th').innerHTML = emptyBox('Thread not in this snapshot', 'The issue or pull request may exist outside this published static bundle.', null, rurl('/' + (kind === 'issue' ? 'issues' : 'prs')), 'back') })
   }
   function vSearch (q) {
-    q = (q || '').toLowerCase()
+    var parsed = searchParts(q)
     var res = []
-    ;(INDEX && INDEX.repos || []).filter(function (r) { return (r.name + ' ' + (r.description || '')).toLowerCase().indexOf(q) > -1 }).forEach(function (r) {
-      res.push('<a class="li" href="#/r/' + encodeURIComponent(r.key) + '/"><span class="ico">⌬</span><span class="nm">repo: ' + esc(r.name) + '</span></a>')
-    })
+    if (wants(parsed, 'repo')) {
+      ;(INDEX && INDEX.repos || []).filter(function (r) { return matches(parsed, r.name + ' ' + (r.description || '')) }).forEach(function (r) {
+        res.push('<a class="li" href="#/r/' + encodeURIComponent(r.key) + '/"><span class="ico">⌬</span><span class="nm">repo: ' + esc(r.name) + '</span></a>')
+      })
+    }
+    if (REPO && wants(parsed, 'branch')) {
+      ;(REPO.branches || []).filter(function (b) { return matches(parsed, b.name) }).forEach(function (b) {
+        res.push('<a class="li" href="' + rurl('/files/' + encodeURIComponent(b.name) + '/') + '"><span class="ico">⑂</span><span class="nm">branch: ' + esc(b.name) + '</span><span class="mono">' + esc(short(b.oid)) + '</span></a>')
+      })
+    }
     chrome(REPO ? 'code' : 'home')
-    setMain(h('<div class="wrap"><h1>Search <span class="muted mono">· ' + esc(q || 'all') + '</span></h1><p class="repo-desc">Search covers names and descriptions on the forge home; inside a repo it also checks default-branch file paths, issue titles, and pull request titles included in this snapshot.</p><div id="sr" class="panel list">' + (res.join('') || '') + '<div class="empty" id="se">' + (res.length ? '' : (REPO ? 'searching snapshot…' : 'no matching repositories')) + '</div></div></div>'))
+    setMain(h('<div class="wrap"><h1>Search <span class="muted mono">· ' + esc(parsed.raw || 'all') + '</span></h1><p class="repo-desc">Use <code>repo:</code>, <code>file:</code>, <code>branch:</code>, <code>issue:</code>, or <code>pr:</code> to narrow snapshot search.</p><div id="sr" class="panel list">' + (res.join('') || '') + '<div class="empty" id="se">' + (res.length ? '' : (REPO ? 'searching snapshot…' : 'no matching repositories')) + '</div></div></div>'))
     if (!REPO) { if (res.length) { var s0 = byId('se'); if (s0) s0.remove() } return }
-    var sb = safeBranch(REPO.defaultBranch), pend = 3
-    function step () { if (--pend === 0) { var se = byId('se'); if (se) { if (document.querySelectorAll('#sr .li').length) se.remove(); else se.textContent = 'no matches' } } }
+    var sb = safeBranch(REPO.defaultBranch), pend = 0
+    function step () { if (--pend <= 0) { var se = byId('se'); if (se) { if (document.querySelectorAll('#sr .li').length) se.remove(); else se.textContent = 'no matches' } } }
     var add = function (html) { var sr = byId('sr'); var se = byId('se'); if (sr && se) sr.insertBefore(h(html), se) }
-    getJSON(base() + 'api/tree/' + sb + '.json').then(function (d) {
-      d.entries.filter(function (e) { return e.type !== 'tree' && e.path.toLowerCase().indexOf(q) > -1 }).slice(0, 50).forEach(function (e) {
-        add('<a class="li" href="' + rurl('/files/' + encodeURIComponent(REPO.defaultBranch) + '/' + encodeURI(e.path)) + '"><span class="ico">·</span><span class="nm">' + esc(e.path) + '</span></a>')
-      }); step()
-    }).catch(step)
-    getJSON(base() + 'api/issues.json').then(function (a) { a.filter(function (i) { return (i.title || '').toLowerCase().indexOf(q) > -1 }).forEach(function (i) { add('<a class="li" href="' + rurl('/issue/' + encodeURIComponent(i.issueId)) + '">' + stateBadge(i.state || 'open') + '<span class="nm">issue: ' + esc(i.title) + '</span></a>') }); step() }).catch(step)
-    getJSON(base() + 'api/prs.json').then(function (a) { a.filter(function (p) { return (p.title || '').toLowerCase().indexOf(q) > -1 }).forEach(function (p) { add('<a class="li" href="' + rurl('/pr/' + encodeURIComponent(p.prId)) + '">' + stateBadge(p.state || 'open') + '<span class="nm">PR: ' + esc(p.title) + '</span></a>') }); step() }).catch(step)
+    if (wants(parsed, 'file')) {
+      pend++
+      getJSON(base() + 'api/tree/' + sb + '.json').then(function (d) {
+        d.entries.filter(function (e) { return e.type !== 'tree' && matches(parsed, e.path) }).slice(0, 50).forEach(function (e) {
+          add('<a class="li" href="' + rurl('/files/' + encodeURIComponent(REPO.defaultBranch) + '/' + encodeURI(e.path)) + '"><span class="ico">·</span><span class="nm">file: ' + esc(e.path) + '</span></a>')
+        }); step()
+      }).catch(step)
+    }
+    if (wants(parsed, 'issue')) {
+      pend++
+      getJSON(base() + 'api/issues.json').then(function (a) { a.filter(function (i) { return matches(parsed, i.title || '') }).forEach(function (i) { add('<a class="li" href="' + rurl('/issue/' + encodeURIComponent(i.issueId)) + '">' + stateBadge(i.state || 'open') + '<span class="nm">issue: ' + esc(i.title) + '</span></a>') }); step() }).catch(step)
+    }
+    if (wants(parsed, 'pr')) {
+      pend++
+      getJSON(base() + 'api/prs.json').then(function (a) { a.filter(function (p) { return matches(parsed, p.title || '') }).forEach(function (p) { add('<a class="li" href="' + rurl('/pr/' + encodeURIComponent(p.prId)) + '">' + stateBadge(p.state || 'open') + '<span class="nm">PR: ' + esc(p.title) + '</span></a>') }); step() }).catch(step)
+    }
+    if (pend === 0) step()
   }
 
   // ── router ──────────────────────────────────────────────────────────────
   function dispatchRepo (sub) {
     var m
+    if ((m = sub.match(/^\/search\?q=(.*)$/))) return vSearch(decodeURIComponent(m[1]))
     if ((m = sub.match(/^\/files\/([^/]+)\/?(.*)$/))) return vFiles(decodeURIComponent(m[1]), decodeURIComponent(m[2] || ''))
     if ((m = sub.match(/^\/commits\/([^/]+)/))) return vCommits(decodeURIComponent(m[1]))
     if ((m = sub.match(/^\/commit\/([0-9a-f]+)/i))) return vCommit(m[1])
