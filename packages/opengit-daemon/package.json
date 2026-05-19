@@ -1,0 +1,16 @@
+{
+  "name": "opengit-daemon",
+  "version": "0.0.1",
+  "description": "Local OpenGit daemon and read projection API",
+  "license": "Apache-2.0",
+  "main": "lib/daemon.js",
+  "bin": {
+    "opengit-daemon": "bin/opengit-daemon.js"
+  },
+  "exports": {
+    ".": "./lib/daemon.js"
+  },
+  "dependencies": {
+    "opengit-core": "*"
+  }
+}

@@ -43,6 +43,14 @@ npm test                       # expect:  # pass 119   # fail 0   # skipped 4
 node scripts/dry-run-collab.js # expect:  DRY-RUN PASSED — 9/9 steps.
 ```
 
+Security regression coverage to keep green before live tests:
+`packages/opengit-core/test/encryption.test.js` includes the private
+collaboration Autobase check (`private repo: collaboration Autobases are
+encrypted with the content key`). That means private issue/PR content is no
+longer a separate audit gap; owner-offline relay proof, daemon ergonomics,
+projections, moderation/spam, multi-writer refs, direct pack-object reads,
+release engineering, and scale targets remain separate follow-ups.
+
 If either is not green on a machine, **stop and fix that machine** — the live
 test cannot succeed if the solo dry-run is red there.
 
@@ -141,7 +149,10 @@ signed issue and a merged PR crossing two real machines over the P2P network —
 
 Optional (private-repo cold-bootstrap, the live-test plan §Stage 4): repeat with
 `opengit init --private`; you `opengit invite <repo> <Ian-identity-pub>`; Ian
-`opengit accept-invite <repo>` then re-runs the contributor role.
+`opengit accept-invite <repo>` then re-runs the contributor role. The expected
+privacy property is content-key encryption for refs, objects, metadata, and
+the issue/PR Autobases; the manifest and wrapped-key bootstrap stay plaintext
+by design.
 
 ---
 

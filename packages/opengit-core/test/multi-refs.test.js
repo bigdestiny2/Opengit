@@ -170,3 +170,27 @@ test('multi-writer setRef requires identity', async (t) => {
   )
   await forge2.close()
 })
+
+test('multi-writer deleteRef signs a ref-del event', async (t) => {
+  if (skipIfNoAutobase(t)) return
+
+  const dir = tmpdir()
+  const owner = new OpengitIdentity()
+  const forge = new OpengitForge({ storage: dir, identity: owner })
+  await forge.ready()
+  const repo = await forge.createRepo('mw-delete', { multiwriter: true })
+
+  await repo.setRef('refs/heads/delete-me', 'd'.repeat(40))
+  await repo.deleteRef('refs/heads/delete-me')
+
+  // Autobase application is eventual, but the important public contract is
+  // that deleteRef appends a valid signed ref-del input instead of throwing.
+  const block = await repo._refsBase.local.get(repo._refsBase.local.length - 1)
+  const input = JSON.parse(b4a.toString(block.node.value))
+  assert.equal(input.type, 'ref-del')
+  assert.equal(input.ref, 'refs/heads/delete-me')
+  assert.equal(validateRefEvent(input, repo._eventDomain('refs')), true)
+  assert.equal(verifySig(input, repo._eventDomain('refs')), true)
+
+  await forge.close()
+})

@@ -49,6 +49,7 @@ opengit identity init || true</code></pre>
 <p>Self-check — confirm your machine reproduces the full flow <strong>in-harness</strong> before going live (this is the single best pre-flight; it caught 8 real bugs):</p>
 <pre data-lang="bash"><code>npm test                       # expect:  # pass 119   # fail 0   # skipped 4
 node scripts/dry-run-collab.js # expect:  DRY-RUN PASSED — 9/9 steps.</code></pre>
+<p>Security regression coverage to keep green before live tests: <code>packages/opengit-core/test/encryption.test.js</code> includes the private collaboration Autobase check (<code>private repo: collaboration Autobases are encrypted with the content key</code>). That means private issue/PR content is no longer a separate audit gap; owner-offline relay proof, daemon ergonomics, projections, moderation/spam, multi-writer refs, direct pack-object reads, release engineering, and scale targets remain separate follow-ups.</p>
 <p>If either is not green on a machine, <strong>stop and fix that machine</strong> — the live test cannot succeed if the solo dry-run is red there.</p>
 <hr>
 <h2>Stage 1 — first real <code>git clone opengit://</code> across two machines</h2>
@@ -87,7 +88,7 @@ opengit collab contributor --repo &lt;REPO_KEY&gt;
   PR    … → MERGED by maintainer
 Opengit is a forge. 🎉</code></pre>
 <p>✅ <strong>Stage 4 passes</strong> when Ian's process exits 0 with that banner. That is a signed issue and a merged PR crossing two real machines over the P2P network — <strong>Opengit proving it is a forge.</strong></p>
-<p>Optional (private-repo cold-bootstrap, the live-test plan §Stage 4): repeat with <code>opengit init --private</code>; you <code>opengit invite &lt;repo&gt; &lt;Ian-identity-pub&gt;</code>; Ian <code>opengit accept-invite &lt;repo&gt;</code> then re-runs the contributor role.</p>
+<p>Optional (private-repo cold-bootstrap, the live-test plan §Stage 4): repeat with <code>opengit init --private</code>; you <code>opengit invite &lt;repo&gt; &lt;Ian-identity-pub&gt;</code>; Ian <code>opengit accept-invite &lt;repo&gt;</code> then re-runs the contributor role. The expected privacy property is content-key encryption for refs, objects, metadata, and the issue/PR Autobases; the manifest and wrapped-key bootstrap stay plaintext by design.</p>
 <hr>
 <h2>Stage 5.2 — owner-offline availability via YOUR relay (self-host)</h2>
 <p>The dogfood blocker after 5.1: the repo must stay cloneable <strong>while your laptop is closed</strong> — that's what makes GitHub-free async collaboration real. You operate the relay, so this is yours to run end-to-end. (In-harness can't prove this — single-node fixtures can't holepunch the blind-peer muxer; it's a documented skip. The authoritative proof is this real-relay run.)</p>
