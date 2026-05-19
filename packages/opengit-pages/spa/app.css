@@ -56,7 +56,11 @@ select{font:inherit;font-family:var(--mono);font-size:.82rem;background:var(--bg
 .session{display:flex;align-items:center;gap:7px;min-height:32px;padding:5px 9px;border:1px solid var(--bd);
   border-radius:7px;background:var(--bg1);color:var(--mut);font-family:var(--mono);font-size:.72rem;white-space:nowrap}
 .session span:last-child{color:var(--ac)}
+.session.daemon{border-color:var(--add);background:var(--acd)}
 .dot{width:7px;height:7px;border-radius:999px;background:var(--ac);box-shadow:0 0 0 3px var(--acd);flex:0 0 auto}
+.keybtn{font-family:var(--mono);font-size:.74rem;background:var(--bg2);border:1px solid var(--bd);
+  color:var(--mut);border-radius:7px;min-width:42px;height:32px;padding:0 9px}
+.keybtn:hover{border-color:var(--ac);color:var(--ach)}
 .search{margin-left:0;display:flex;flex:0 1 310px;min-width:210px}
 .search input{font:inherit;font-size:.85rem;background:var(--bg2);border:1px solid var(--bd);color:var(--tx);
   padding:7px 12px;border-radius:7px;min-width:0;width:100%;font-family:var(--mono)}
@@ -81,6 +85,36 @@ h3{font-size:1rem;margin:1.4em 0 .5em}
 .btn{display:inline-block;font-family:var(--mono);font-size:.82rem;border:1px solid var(--bdh);
   color:var(--tx);background:var(--bg1);padding:6px 12px;border-radius:7px}
 .btn:hover{border-color:var(--ac);color:var(--ach);text-decoration:none}
+
+/* repo dashboard */
+.dash{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:14px 0 12px}
+.metriclink{display:block;color:inherit;text-decoration:none}
+.metriclink:hover{text-decoration:none}
+.metric{min-height:86px;background:var(--bg1);border:1px solid var(--bd);border-radius:8px;padding:10px 12px}
+.metriclink:hover .metric{border-color:var(--ac);background:var(--bg2)}
+.metric span,.metric em{display:block;font-family:var(--mono);font-style:normal;font-size:.72rem;color:var(--mut);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.metric strong{display:block;font-family:var(--mono);font-size:1.18rem;color:var(--tx);margin:3px 0 1px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* command palette */
+.palette{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.46);display:flex;align-items:flex-start;justify-content:center;
+  padding:86px 18px 18px}
+.palette[hidden]{display:none}
+.palbox{width:min(680px,100%);background:var(--bg1);border:1px solid var(--bdh);border-radius:10px;overflow:hidden;
+  box-shadow:0 18px 60px rgba(0,0,0,.35)}
+.palinput{width:100%;background:var(--bg);border:0;border-bottom:1px solid var(--bd);color:var(--tx);
+  font:inherit;font-family:var(--mono);font-size:.95rem;padding:14px 16px}
+.palinput:focus{outline:0}
+.palres{max-height:min(58vh,520px);overflow:auto;padding:6px}
+.palitem{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;background:transparent;
+  color:var(--tx);border:0;border-radius:7px;padding:9px 10px}
+.palitem:hover,.palitem:focus{background:var(--bg2);outline:0}
+.palitem strong,.palitem em{display:block;font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.palitem strong{font-size:.92rem}.palitem em{font-family:var(--mono);font-size:.74rem;color:var(--mut)}
+.paltype{font-family:var(--mono);font-size:.68rem;color:var(--ac);border:1px solid var(--add);background:var(--acd);
+  border-radius:999px;padding:2px 7px;white-space:nowrap}
+.palempty{padding:24px;text-align:center;color:var(--dim);font-family:var(--mono);font-size:.86rem}
 
 /* clone panel (the defining P2P action) */
 .clone{background:var(--bg1);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;margin:4px 0 6px}
@@ -147,7 +181,7 @@ pre.code .ln:hover{background:rgba(127,127,127,.06)}
 pre.code .ln:target{background:rgba(76,217,164,.13)}
 .tok-k{color:#7fb2ff}.tok-s{color:#9fe0b4}.tok-c{color:var(--dim);font-style:italic}
 .tok-n{color:#e8b34a}.tok-p{color:#c98bdb}
-.readme{background:var(--bg1);border:1px solid var(--bd);border-radius:10px;padding:22px 26px;margin-top:14px}
+.readme{background:var(--bg1);border:1px solid var(--bd);border-radius:10px;padding:22px 26px;margin-top:14px;overflow:hidden}
 .readme h1,.readme h2{border:0}
 .readme pre{background:#07080a;border:1px solid var(--bd);border-radius:8px;padding:12px 14px;overflow:auto;font-size:.82rem}
 .readme code{background:var(--bg2);border:1px solid var(--bd);border-radius:4px;padding:.05em .35em;font-size:.86em}
@@ -173,10 +207,14 @@ pre.diff .d{color:var(--red);background:rgba(240,104,110,.08)}pre.diff .at{color
 .thread{display:flex;flex-direction:column;gap:14px}
 .note{background:var(--bg1);border:1px solid var(--bd);border-radius:10px;overflow:hidden}
 .note .nh{display:flex;gap:10px;align-items:baseline;padding:9px 15px;background:var(--bg2);
-  border-bottom:1px solid var(--bd);font-size:.85rem}
+  border-bottom:1px solid var(--bd);font-size:.85rem;flex-wrap:wrap}
+.note .etype{font-family:var(--mono);font-size:.68rem;color:var(--tx);border:1px solid var(--bdh);
+  border-radius:999px;padding:1px 7px;background:var(--bg1)}
 .note .nh .who{font-family:var(--mono);color:var(--ac)}
 .note .nb{padding:14px 18px}
-.note .sig{font-family:var(--mono);font-size:.72rem;color:var(--dim);padding:6px 15px;border-top:1px solid var(--bd)}
+.verified{margin-left:auto;font-family:var(--mono);font-size:.68rem;color:var(--ac);border:1px solid var(--add);
+  border-radius:999px;background:var(--acd);padding:1px 7px}
+.verified span{color:var(--mut)}
 
 /* forge home repo cards */
 .repocard{flex-direction:column;align-items:stretch;gap:8px}
@@ -193,18 +231,30 @@ pre.diff .d{color:var(--red);background:rgba(240,104,110,.08)}pre.diff .at{color
 .repocard .rc-clone code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.76rem;color:var(--mut);
   border:1px solid var(--bd);border-radius:7px;background:var(--bg);padding:7px 9px}
 
+@media(max-width:920px){
+  .dash{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+
 @media(max-width:680px){
   .brand{flex:1 1 100%}
   #ctx{flex:1 1 100%;order:2}
   .session{order:3;flex:1 1 auto;justify-content:center}
+  .keybtn{order:4}
   .search{order:9;width:100%;flex-basis:100%;min-width:0}
   .search input{width:100%}
   #ctx select{width:calc(100vw - 40px);max-width:calc(100vw - 40px);flex:0 1 calc(100vw - 40px)}
   .top .row{gap:10px}
   .wrap{padding:18px 14px 60px}
   .clone-row{flex-wrap:wrap}
-  .clone-row code{flex-basis:100%}
+  .clone-row code{flex-basis:100%;overflow:hidden;text-overflow:ellipsis}
   .repocard .rc-clone{grid-template-columns:1fr}
   .repocard .rc-clone .copy{width:100%}
   .tabs a{padding:6px 9px}
+  .dash{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .palette{padding-top:64px}
+  .metric{min-height:78px}
+  .readme{padding:18px 16px}
+  .readme pre{white-space:pre-wrap;word-break:break-word}
+  .readme table{display:block;max-width:100%;overflow-x:auto}
+  .readme th,.readme td{word-break:break-word;min-width:120px}
 }
