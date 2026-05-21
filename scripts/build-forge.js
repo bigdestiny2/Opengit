@@ -170,10 +170,12 @@ async function main () {
 
   const idx = JSON.parse(fs.readFileSync(path.join(OUT, 'api', 'index.json'), 'utf8'))
   const rel = path.relative(ROOT, OUT)
+  const storeRel = path.relative(ROOT, store)
   process.stdout.write(
     `\nforge built → ${OUT}\n` +
     `  ${idx.count} repos: ${idx.repos.map(x => x.name).join(', ')}\n` +
     `  ${n} files · forge at /  · landing at /about/\n` +
+    `  stable-key anchor: ${storeRel}/  (BACK THIS UP — losing it rotates every /r/<key>/ URL)\n` +
     `  deploy (Cloudflare Pages):  npm run deploy:cf\n` +
     `  publish P2P (Hyperdrive):   node scripts/publish-site.js --dir ${rel}\n` +
     `  inspect locally:            node scripts/serve-local.js --dir ${rel} --port 8090\n`

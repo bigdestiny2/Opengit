@@ -17,3 +17,9 @@ live-admit.txt
 # so repo URLs (/r/<key>/) stay stable across redeploys. Per-operator; do not
 # commit (each forge operator gets their own anchor).
 .forge-build-store/
+# Claude Code agent operational state (worktree dirs, per-session settings).
+# Per-developer; should never be committed. Intentional shared config under
+# .claude/ (e.g., launch.json) is still trackable — only operational state
+# is ignored.
+.claude/worktrees/
+.claude/settings.local.json
