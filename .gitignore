@@ -13,3 +13,7 @@ live-admit.txt
 .site-drive/
 .preview/
 .forge-cache/
+# Stable Corestore primary key for opengit.tech-style forge builds. Persisted
+# so repo URLs (/r/<key>/) stay stable across redeploys. Per-operator; do not
+# commit (each forge operator gets their own anchor).
+.forge-build-store/
