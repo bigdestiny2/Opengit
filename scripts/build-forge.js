@@ -80,7 +80,21 @@ async function main () {
 
   fs.rmSync(OUT, { recursive: true, force: true })
   fs.mkdirSync(OUT, { recursive: true })
-  const store = fs.mkdtempSync(path.join(os.tmpdir(), 'og-forge-store-'))
+  // STABLE Corestore primary key across builds.
+  // Repo keys are derived from `rootStore.namespace('repo:'+name)` and the
+  // Corestore primary key, which Corestore generates on first ready() and
+  // persists in this storage dir. If we mkdtemp this every build, the
+  // primary key changes every redeploy and so do all `/r/<key>/` URLs —
+  // every previously-shared opengit.tech link silently dies. Persisting
+  // the store (and only the store; shadow git data stays per-build) means
+  // the same `repo:<name>` namespace = the same key, forever.
+  //
+  // Override with --store or OPENGIT_FORGE_BUILD_STORE if you need a
+  // different anchor (e.g. to test fresh-key behavior). Deleting the
+  // directory regenerates the keys (one-time URL rotation).
+  const store = path.resolve(arg('--store',
+    process.env.OPENGIT_FORGE_BUILD_STORE || path.join(ROOT, '.forge-build-store')))
+  fs.mkdirSync(store, { recursive: true })
   const shadowRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'og-forge-shadow-'))
 
   const forge = new OpengitForge({ storage: store, profileName: 'forge', identity: new OpengitIdentity() })
